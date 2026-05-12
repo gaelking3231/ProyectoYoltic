@@ -10,5 +10,4 @@ openai
 firebase-admin
 
 # Audio Processing
-audioop-copy
 scipy
