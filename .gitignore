@@ -1,0 +1,24 @@
+# Multimedia y Modelos Pesados
+*.wav
+*.webm
+*.bin
+dashboard/temp_audio/
+temp_audio/
+hf_dataset/
+machine_learning/nllb_ct2/
+machine_learning/whisper_ct2/
+
+# Credenciales (SEGURIDAD CRITICA)
+*.json
+serviceAccountKey.json
+proyectoyoltic-firebase-adminsdk-*.json
+.env
+.env.local
+
+# Desarrollo
+node_modules
+dashboard/.next
+dashboard/out
+.vscode
+.idea
+__pycache__

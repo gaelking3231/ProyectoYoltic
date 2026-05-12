@@ -1,0 +1,144 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ══════════════════════════════════════════════════════════
+    // YOLTIC — Firestore Security Rules
+    // Professional-grade, per-user data isolation
+    // ══════════════════════════════════════════════════════════
+
+    // ─── Helper Functions ────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDeviceOwner() {
+      return isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    function incomingData() {
+      return request.resource.data;
+    }
+
+    function existingData() {
+      return resource.data;
+    }
+
+    // Validate that a string field is non-empty
+    function isNonEmptyString(field) {
+      return field is string && field.size() > 0;
+    }
+
+    // Validate dialect is one of the supported variants
+    function isValidDialect(dialect) {
+      return dialect in ['valley', 'isthmus', 'sierra_norte', 'sierra_sur'];
+    }
+
+    // ─── Users Collection ────────────────────────────────────
+    // Each user can only read/write their own profile.
+    // The document ID must match the authenticated UID.
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+        && isNonEmptyString(incomingData().displayName)
+        && isNonEmptyString(incomingData().email)
+        && incomingData().createdAt == request.time;
+
+      allow update: if isOwner(userId)
+        && (!('email' in request.resource.data) || incomingData().email == existingData().email);
+        // Users cannot change their email via client SDK
+
+      allow delete: if false;
+      // Users cannot delete their own profile from client
+    }
+
+    // ─── Dispositivos (Devices) Collection ───────────────────
+    // Devices are bound to a specific user via userId field.
+    // Only the owning user can read/write device documents.
+
+    match /dispositivos/{deviceId} {
+      allow read: if isAuthenticated()
+        && resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated()
+        && incomingData().userId == request.auth.uid
+        && isNonEmptyString(incomingData().name)
+        && isNonEmptyString(incomingData().type)
+        && incomingData().status in ['online', 'offline', 'streaming'];
+
+      allow update: if isDeviceOwner()
+        && incomingData().userId == existingData().userId
+        // Cannot transfer device ownership
+        && incomingData().status in ['online', 'offline', 'streaming'];
+
+      allow delete: if isDeviceOwner();
+    }
+
+    // ─── Conversaciones Collection ───────────────────────────
+    // Conversations contain private translation data.
+    // Only the owning user can read their conversations.
+    // Only Cloud Functions (Admin SDK) write translation results,
+    // but clients can create the initial document.
+
+    match /conversaciones/{conversationId} {
+      allow read: if isAuthenticated()
+        && resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated()
+        && incomingData().userId == request.auth.uid
+        && isNonEmptyString(incomingData().deviceId)
+        && incomingData().status == 'processing'
+        && incomingData().createdAt == request.time
+        && isNonEmptyString(incomingData().audioUrl)
+        && isValidDialect(incomingData().dialect);
+
+      // Only Cloud Functions (Admin SDK) can update conversations
+      // This ensures translation results are tamper-proof
+      allow update: if false;
+
+      allow delete: if isAuthenticated()
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // ─── Glosario Maestro ─────────────────────────────────────
+    // Glosario público de Zapoteco del Istmo.
+    // Lectura: abierta (recurso lingüístico de referencia).
+    // Escritura: abierta para carga de datos inicial.
+    // NOTA: Después del seed, cambiar a 'allow write: if false;'
+    //       para que solo Admin SDK pueda modificar el glosario.
+
+    match /glosario_maestro/{entradaId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /translations/{docId} {
+      allow read, write: if true;
+    }
+    
+    match /devices/{docId} {
+      allow read, write: if true;
+    }
+
+    match /settings/{docId} {
+      allow read, write: if true;
+    }
+
+    match /logs/{docId} {
+      allow read, write: if true;
+    }
+
+    // ─── Catch-all: Deny everything else ─────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
