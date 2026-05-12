@@ -202,10 +202,25 @@ async def handle_audio_upload(request):
             })
             
         print(f"[STUDIO] Nuevo audio guardado: {filename} ({zap_text})")
-        return web.json_response({"status": "success", "id": doc_id})
+        
+        # Añadimos cabeceras CORS para permitir la conexión desde la web
+        headers = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type"
+        }
+        return web.json_response({"status": "success", "id": doc_id}, headers=headers)
     except Exception as e:
         print(f"[ERROR STUDIO] {e}")
-        return web.json_response({"status": "error", "message": str(e)}, status=500)
+        return web.json_response({"status": "error", "message": str(e)}, status=500, headers={"Access-Control-Allow-Origin": "*"})
+
+async def handle_options(request):
+    """Manejador para el pre-flight de CORS"""
+    return web.Response(headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+    })
 
 async def websocket_handler(request):
     ws = web.WebSocketResponse()
@@ -285,7 +300,8 @@ async def main():
     app = web.Application()
     app.add_routes([
         web.get('/ws', websocket_handler),
-        web.post('/upload_audio', handle_audio_upload)
+        web.post('/upload_audio', handle_audio_upload),
+        web.options('/upload_audio', handle_options)
     ])
     
     port = int(os.environ.get("PORT", 8080))
