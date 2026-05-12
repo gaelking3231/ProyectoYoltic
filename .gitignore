@@ -9,9 +9,15 @@ machine_learning/nllb_ct2/
 machine_learning/whisper_ct2/
 
 # Credenciales (SEGURIDAD CRITICA)
-*.json
 serviceAccountKey.json
 proyectoyoltic-firebase-adminsdk-*.json
+# Ignorar otros JSONs pero permitir los de Node
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!next.config.json
+
 .env
 .env.local
 
