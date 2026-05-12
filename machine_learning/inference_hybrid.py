@@ -1,14 +1,20 @@
 import os
-import time
 import json
 import asyncio
+import websockets
 import base64
+from datetime import datetime
+from aiohttp import web
+import time
 import wave
 import audioop
 import numpy as np
 import soundfile as sf
-import websockets
 from dotenv import load_dotenv
+
+# Carpeta para guardar audios de entrenamiento
+SAVE_DIR = "/home/site/wwwroot/training_data" if os.environ.get("PORT") else "training_data"
+os.makedirs(SAVE_DIR, exist_ok=True)
 
 # Cargar variables de entorno (OpenAI API, Anthropic API) desde dashboard/.env.local
 env_path = os.path.join(os.path.dirname(__file__), "..", "dashboard", ".env.local")
@@ -157,168 +163,147 @@ def generate_azure_tts(text):
 
 
 # ==========================================
-async def process_audio_stream(websocket):
-    print(f"[CONEXION] Yoltic Glasses conectados desde {websocket.remote_address}")
-    
-    # 0. MENSAJE DE BIENVENIDA (OLED)
+# ==========================================
+# SERVIDOR DUAL (WEBSOCKET + HTTP)
+# ==========================================
+async def handle_audio_upload(request):
+    """Manejador para recibir audios del Studio de Voces (Dashboard)"""
     try:
-        welcome_payload = {
-            "translation": "YOLTIC V1.0 - Listo",
-            "audio": "",
-            "latency_ms": 0,
-            "source": "system"
-        }
-        await websocket.send(json.dumps(welcome_payload))
-        print("[OLED] Mensaje de bienvenida enviado: 'YOLTIC V1.0 - Listo'")
+        data = await request.post()
+        audio_file = data.get('audio')
+        zap_text = data.get('zapoteco', '...')
+        esp_text = data.get('espanol', '...')
+        
+        if not audio_file:
+            return web.json_response({"status": "error", "message": "Falta el archivo de audio"}, status=400)
+            
+        doc_id = str(uuid.uuid4())
+        extension = "webm" # Default del navegador
+        filename = f"{doc_id}.{extension}"
+        file_path = os.path.join(SAVE_DIR, filename)
+        
+        # Guardar el archivo en el disco de Azure
+        with open(file_path, 'wb') as f:
+            f.write(audio_file.file.read())
+            
+        # Sincronizar con Firestore para que aparezca en el Dataset (ML)
+        if db:
+            db.collection("translations").document(doc_id).set({
+                "stt_text": zap_text,
+                "translation": esp_text,
+                "audioUrl": f"AZURE_LOCAL:{filename}", # Marca especial para saber que está en Azure
+                "status": "completed",
+                "source": "web_studio",
+                "timestamp": firestore.SERVER_TIMESTAMP,
+                "metadata": {
+                    "file_path": file_path,
+                    "is_training_data": True
+                }
+            })
+            
+        print(f"[STUDIO] Nuevo audio guardado: {filename} ({zap_text})")
+        return web.json_response({"status": "success", "id": doc_id})
     except Exception as e:
-        print(f"[ERROR] Error enviando bienvenida: {e}")
+        print(f"[ERROR STUDIO] {e}")
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    
+    print(f"[CONEXION] Yoltic Glasses conectados desde {request.remote_addr}")
+    
+    # Mensaje de bienvenida
+    await ws.send_str(json.dumps({
+        "translation": "YOLTIC CLOUD - Conectado",
+        "source": "system"
+    }))
 
     try:
-        async for message in websocket:
-            if isinstance(message, bytes):
+        async for msg in ws:
+            if msg.type == web.WSMsgType.BINARY:
                 start_time = time.time()
+                pcm_incoming = msg.data
                 
-                # 1. RECIBIR AUDIO
-                pcm_incoming = message
-                
-                # 1. RECIBIR AUDIO DEL ESP32
-                pcm_incoming = message
-                
-                # ESP32 manda Estéreo (I2S_CHANNEL_FMT_RIGHT_LEFT) pero el INMP441 graba solo en Izquierdo
-                # Usamos audioop para pasarlo a Mono, tomando el canal izquierdo
+                # Procesamiento de audio (igual que antes)
                 try:
                     pcm_original = audioop.tomono(pcm_incoming, 2, 1, 0)
-                except Exception as e:
-                    print(f"Error tomono: {e}")
+                except:
                     pcm_original = pcm_incoming
                 
-                print(f"[AUDIO] Recibido ({len(pcm_original)} bytes) - Procesando...")
-                
-                # 2. PREPARAR SEÑAL
-                # Boosted (5x) solo para Whisper, Original para Dashboard
                 pcm_boosted = audioop.mul(pcm_original, 2, 5.0) 
                 audio_np = np.frombuffer(pcm_original, dtype=np.int16).astype(np.float32) / 32768.0
                 
-                # 3. GUARDAR TEMPORALES
                 doc_id = str(uuid.uuid4())
-                os.makedirs("temp_audio", exist_ok=True)
                 wav_path = f"temp_audio/{doc_id}.wav"
+                os.makedirs("temp_audio", exist_ok=True)
                 
+                with wave.open(wav_path, 'wb') as wf:
+                    wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
+                    wf.writeframes(pcm_boosted)
+                
+                # Inferencia
+                stt_text, translation = "...", "Error"
+                source = "cloud"
                 try:
-                    with wave.open(wav_path, 'wb') as wf:
-                        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
-                        wf.writeframes(pcm_boosted)
+                    stt_text, translation = await asyncio.to_thread(run_cloud_inference, wav_path)
                 except Exception as e:
-                    print(f"[ERROR] Fallo al guardar WAV: {e}")
+                    print(f"Error inferencia: {e}")
                 
-                # 4. INFERENCIA HÍBRIDA
-                stt_text = "..."
-                translation = "Error de conexión"
-                source = "local"
+                # TTS
+                audio_16k = await asyncio.to_thread(generate_azure_tts, translation)
                 
-                try:
-                    if not LOCAL_READY:
-                        raise ValueError("Modelos locales no disponibles")
-                        
-                    # Intento Local (Esperamos hasta 15 segundos porque las CPUs pueden ser lentas)
-                    stt_text, translation = await asyncio.wait_for(
-                        asyncio.to_thread(run_local_inference, audio_np),
-                        timeout=15.0
-                    )
-                except Exception as e:
-                    # Fallback Cloud (Robusto)
-                    print(f"[CLOUD] Cambiando a modo Nube... ({e})")
-                    source = "cloud"
-                    try:
-                        stt_text, translation = await asyncio.to_thread(run_cloud_inference, wav_path)
-                    except Exception as cloud_err:
-                        print(f"[CRITICAL] Fallo total de inferencia: {cloud_err}")
-                        translation = "No pude entenderte"
-                
-                # 5. SÍNTESIS DE VOZ (Azure-First TTS)
-                print(f"[TRADUCCION] '{stt_text}' -> '{translation}'")
-                pcm_out_base64 = ""
-                audio_16k = None
-                
-                try:
-                    # Intentamos Azure primero (Mejor calidad)
-                    print("[VOZ] Generando audio con Azure Neural TTS...")
-                    audio_16k = await asyncio.to_thread(generate_azure_tts, translation)
-                    
-                    if not audio_16k:
-                        # Fallback a OpenAI si Azure falla
-                        print("[VOZ] Azure falló, usando OpenAI TTS...")
-                        tts_response = await asyncio.to_thread(
-                            lambda: openai_client.audio.speech.create(
-                                model="tts-1", voice="alloy", input=translation, response_format="pcm"
-                            )
-                        )
-                        audio_raw = tts_response.content
-                        audio_16k, _ = audioop.ratecv(audio_raw, 2, 1, 24000, 16000, None)
-                except Exception as e:
-                    print(f"[ERROR] Error generando audio: {e}")
-
-
                 latency_ms = int((time.time() - start_time) * 1000)
                 
-                # 6. SINCRONIZACIÓN FIRESTORE (Dashboard)
+                # Sincronizar Firestore
                 if db:
-                    try:
-                        # Copiar audio al dashboard/public
-                        public_audio_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dashboard", "public", "dataset_audio"))
-                        os.makedirs(public_audio_dir, exist_ok=True)
-                        dashboard_wav_path = os.path.join(public_audio_dir, f"{doc_id}.wav")
-                        import shutil
-                        shutil.copy2(wav_path, dashboard_wav_path)
-                        
-                        audio_url = f"/dataset_audio/{doc_id}.wav"
-                        
-                        # Guardar en Firestore con Esquema Unificado
-                        db.collection("translations").document(doc_id).set({
-                            "stt_text": stt_text,
-                            "translation": translation,
-                            "audioUrl": audio_url,
-                            "corrected_text": None,
-                            "latency_ms": latency_ms,
-                            "source": source,
-                            "timestamp": firestore.SERVER_TIMESTAMP
-                        })
-                        print(f"[DASHBOARD] Datos sincronizados en Firestore (ID: {doc_id[:8]})")
-                    except Exception as e:
-                        print(f"[FIREBASE] Error de sincronización: {e}")
+                    db.collection("translations").document(doc_id).set({
+                        "stt_text": stt_text,
+                        "translation": translation,
+                        "latency_ms": latency_ms,
+                        "source": "glasses",
+                        "timestamp": firestore.SERVER_TIMESTAMP
+                    })
                 
-                # 7. RESPUESTA FINAL
-                print(f"[ENVIO] Respuesta enviada a los lentes. Latencia: {latency_ms}ms\n")
-                
-                # Primero enviamos el texto en un pequeño JSON
-                response_payload = {
+                # Responder a los lentes
+                await ws.send_str(json.dumps({
                     "translation": translation,
-                    "latency_ms": latency_ms,
-                    "source": source
-                }
-                await websocket.send(json.dumps(response_payload))
+                    "latency_ms": latency_ms
+                }))
                 
-                # Le damos un instante al ESP32 para leer el texto
-                await asyncio.sleep(0.1)
-                
-                # Enviamos el audio en formato binario puro (más rápido y sin bloqueos de memoria)
-                if 'audio_16k' in locals() and len(audio_16k) > 0:
-                    await websocket.send(audio_16k)
-                else:
-                    print("Advertencia: No hay audio para enviar")
-                
-            else:
-                print("[WARNING] Mensaje recibido no es binario.")
-                
-    except websockets.exceptions.ConnectionClosed:
-        print(f"[DESCONEXION] Yoltic Glasses desconectados.")
-    except Exception as e:
-        print(f"[ERROR FATAL] {e}")
+                if audio_16k:
+                    await asyncio.sleep(0.1)
+                    await ws.send_bytes(audio_16k)
+                    
+            elif msg.type == web.WSMsgType.ERROR:
+                print(f'ws connection closed with exception {ws.exception()}')
+    finally:
+        print("[DESCONEXION] Yoltic Glasses desconectados.")
+    return ws
 
 async def main():
-    print("--- Servidor Hibrido YOLTIC (TAREA 2) iniciado en ws://0.0.0.0:8080")
-    async with websockets.serve(process_audio_stream, "0.0.0.0", 8080):
-        await asyncio.Future()
+    app = web.Application()
+    app.add_routes([
+        web.get('/ws', websocket_handler),
+        web.post('/upload_audio', handle_audio_upload)
+    ])
+    
+    port = int(os.environ.get("PORT", 8080))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    
+    print(f"--- Servidor AI Yoltic Dual activo en puerto {port} ---")
+    print(f"Endpoints: WS /ws | POST /upload_audio")
+    await site.start()
+    
+    # Mantener vivo el servidor
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Servidor detenido.")
+

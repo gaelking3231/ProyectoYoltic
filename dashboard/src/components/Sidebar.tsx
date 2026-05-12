@@ -10,7 +10,8 @@ import {
   Settings, 
   Shield, 
   ScrollText,
-  User
+  User,
+  Mic
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -67,6 +68,12 @@ export default function Sidebar({
         </NavSection>
 
         <NavSection title="Linguística">
+          <NavItem
+            icon={<Mic size={16} />}
+            label="Studio de Voces"
+            active={activeSection === "donar"}
+            onClick={() => onSectionChange("donar")}
+          />
           <NavItem
             icon={<History size={16} />}
             label="Historial"

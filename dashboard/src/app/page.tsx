@@ -28,6 +28,7 @@ import ArchiveView from "@/components/views/ArchiveView";
 import SettingsView from "@/components/views/SettingsView";
 import SecurityView from "@/components/views/SecurityView";
 import LogsView from "@/components/views/LogsView";
+import DonationView from "@/components/views/DonationView";
 
 export default function Dashboard() {
   const [activeSection, setActiveSection] = useState("live");
@@ -95,6 +96,8 @@ export default function Dashboard() {
         return <DialectsView />;
       case "archive":
         return <ArchiveView />;
+      case "donar":
+        return <DonationView />;
       case "settings":
         return <SettingsView />;
       case "security":
@@ -105,6 +108,7 @@ export default function Dashboard() {
         return <LiveFeedView />;
     }
   };
+
 
   if (!isMounted) return null;
 

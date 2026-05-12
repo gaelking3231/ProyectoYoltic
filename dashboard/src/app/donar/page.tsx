@@ -91,42 +91,47 @@ export default function DonarAudio() {
     setIsUploading(true);
     try {
       const id = crypto.randomUUID();
+      const extension = audioBlob.type.includes("mp4") ? "mp4" : "webm";
+      const fileName = `donations/${id}.${extension}`;
       
-      // Volvemos al método de Base64 porque Firebase Storage requiere configuración extra
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
+      // 1. Subir el archivo real a Firebase Storage
+      const storageRef = ref(storage, fileName);
+      await uploadBytes(storageRef, audioBlob);
       
-      reader.onloadend = async () => {
-        const base64Audio = reader.result as string;
-        
-        const docRef = doc(db, "translations", id);
-        await setDoc(docRef, {
-          originalText: currentPhrase.zap, 
-          translation: currentPhrase.esp,
-          corrected_text: currentPhrase.zap,
-          corrected_spanish: currentPhrase.esp,
-          audioUrl: base64Audio,
-          status: "completed",
-          confidence: 100,
-          source: "web_studio",
-          timestamp: serverTimestamp(),
-          metadata: {
-            processingTimeMs: 0
-          }
-        });
+      // 2. Obtener la URL pública del archivo
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      // 3. Guardar la referencia en Firestore
+      const docRef = doc(db, "translations", id);
+      await setDoc(docRef, {
+        originalText: currentPhrase.zap, 
+        translation: currentPhrase.esp,
+        corrected_text: currentPhrase.zap,
+        corrected_spanish: currentPhrase.esp,
+        audioUrl: downloadURL, // Ahora es una URL real de Storage
+        status: "completed",
+        confidence: 100,
+        source: "web_studio",
+        timestamp: serverTimestamp(),
+        metadata: {
+          file_name: fileName,
+          content_type: audioBlob.type,
+          size_bytes: audioBlob.size
+        }
+      });
 
-        setSuccess(true);
-        deleteRecording();
-        setCurrentIndex((prev) => (prev + 1) % SALUDOS.length);
-        setIsUploading(false);
-      };
+      setSuccess(true);
+      deleteRecording();
+      setCurrentIndex((prev) => (prev + 1) % SALUDOS.length);
+      setIsUploading(false);
       
     } catch (error) {
       console.error("Error subiendo el audio:", error);
-      alert("Hubo un error subiendo tu audio. Intenta de nuevo.");
+      alert("Hubo un error subiendo tu audio. Verifica que Firebase Storage esté activo.");
       setIsUploading(false);
     }
   };
+
 
   return (
     <div style={styles.container}>

@@ -1,5 +1,6 @@
 # Core Engine
 websockets
+aiohttp
 python-dotenv
 numpy
 soundfile
