@@ -1,0 +1,13 @@
+# Core Engine
+websockets
+python-dotenv
+numpy
+soundfile
+azure-cognitiveservices-speech
+anthropic
+openai
+firebase-admin
+
+# Audio Processing
+audioop-copy
+scipy

@@ -39,15 +39,25 @@ if azure_speech_key and azure_speech_region:
 db = None
 try:
     if not firebase_admin._apps:
-        cred_path = os.path.join(os.path.dirname(__file__), "..", "dashboard", "serviceAccountKey.json")
-        cred = credentials.Certificate(cred_path)
+        # Intenta cargar desde variable de entorno (Azure/Producción) o desde archivo local
+        firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+        if firebase_json:
+            print("Cargando credenciales de Firebase desde Variable de Entorno")
+            cred_dict = json.loads(firebase_json)
+            cred = credentials.Certificate(cred_dict)
+        else:
+            print("Buscando serviceAccountKey.json localmente...")
+            cred_path = os.path.join(os.path.dirname(__file__), "..", "dashboard", "serviceAccountKey.json")
+            cred = credentials.Certificate(cred_path)
+            
         firebase_admin.initialize_app(cred, {
-            'storageBucket': 'proyectoyoltic.firebasestorage.app'
+            'storageBucket': os.environ.get("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET", 'proyectoyoltic.firebasestorage.app')
         })
     db = firestore.client()
     print("Sincronización con Firebase y Storage Activa")
 except Exception as e:
-    print(f"Aviso: Firebase desactivado. No se encontró 'serviceAccountKey.json'. Razón: {e}")
+    print(f"Aviso: Firebase funcionando en modo limitado o local. Razón: {e}")
+
 
 # ==========================================
 # MODELOS LOCALES CTRANSLATE2
