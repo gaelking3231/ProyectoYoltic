@@ -3,6 +3,7 @@ import json
 import asyncio
 import websockets
 import base64
+import uuid
 from datetime import datetime
 from aiohttp import web
 import time
