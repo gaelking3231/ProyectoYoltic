@@ -72,11 +72,16 @@ export function useConversations(maxCount: number = 50) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!db) {
+      setLoading(false);
+      return;
+    }
     const q = query(
       collection(db, "translations"),
       orderBy("timestamp", "desc"),
       limit(maxCount)
     );
+
 
     const unsubscribe = onSnapshot(
       q,
@@ -131,10 +136,15 @@ export function useDevices() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!db) {
+      setLoading(false);
+      return;
+    }
     const q = query(
       collection(db, "devices"),
       orderBy("lastSeen", "desc")
     );
+
 
     const unsubscribe = onSnapshot(
       q,
@@ -180,12 +190,13 @@ export function useDevice(deviceId: string | null) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!deviceId) {
+    if (!deviceId || !db) {
       setLoading(false);
       return;
     }
 
     const docRef = doc(db, "devices", deviceId);
+
 
     const unsubscribe = onSnapshot(
       docRef,
@@ -232,10 +243,15 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!auth) {
+      setLoading(false);
+      return;
+    }
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setLoading(false);
     });
+
 
     return () => unsubscribe();
   }, []);
