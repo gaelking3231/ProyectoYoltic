@@ -22,12 +22,16 @@ const firebaseConfig = {
 };
 
 
-// Inicializar Firebase (prevenir re-inicialización en hot reload de Next.js)
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// Inicializar Firebase solo si tenemos la configuración mínima necesaria (evita errores en build)
+const app = (getApps().length === 0 && firebaseConfig.apiKey) 
+  ? initializeApp(firebaseConfig) 
+  : (getApps().length > 0 ? getApp() : null);
 
-export const db = getFirestore(app);
-export const storage = getStorage(app);
-export const auth = getAuth(app);
-export const rtdb = getDatabase(app);
+// Exportar servicios con protección contra nulos
+export const db = app ? getFirestore(app) : null as any;
+export const storage = app ? getStorage(app) : null as any;
+export const auth = app ? getAuth(app) : null as any;
+export const rtdb = app ? getDatabase(app) : null as any;
+
 
 export default app;
