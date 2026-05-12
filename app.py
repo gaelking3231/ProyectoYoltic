@@ -5,7 +5,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), "machine_learning"))
 
 # Importar y ejecutar el servidor
-from machine_learning.inference_hybrid import main
+from inference_hybrid import main
 import asyncio
 
 if __name__ == "__main__":
