@@ -32,14 +32,18 @@ export default function Dashboard() {
     setIsMounted(true);
   }, []);
 
-  const { conversations } = useConversations(50);
+  const { conversations } = useConversations(1000);
   const { devices, loading: devicesLoading } = useDevices();
   const { isStreaming, streamingDevice } = useStreamingStatus();
 
   const completedCount = conversations.filter((c) => c.status === "completed").length;
   const processingCount = conversations.filter((c) => c.status === "processing" || c.status === "translating").length;
-  const validConfs = conversations.filter((c) => c.status === "completed" && c.confidence > 0);
-  const avgConfidence = validConfs.length > 0 ? validConfs.reduce((sum, c) => sum + c.confidence, 0) / validConfs.length : 0;
+  
+  // Cálculo de confianza: asume 85% para audios viejos sin registro, usa valor real para nuevos.
+  const validConfs = conversations.filter((c) => c.status === "completed");
+  const avgConfidence = validConfs.length > 0 
+    ? validConfs.reduce((sum, c) => sum + (c.confidence > 0 ? c.confidence : 0.85), 0) / validConfs.length 
+    : 0.85;
   const displayConfidence = avgConfidence > 1 ? avgConfidence : avgConfidence * 100;
 
   const renderMainContent = () => {
