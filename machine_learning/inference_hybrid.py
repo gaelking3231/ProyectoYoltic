@@ -303,7 +303,7 @@ import io
 
 async def serve_audio(request):
     filename = request.match_info.get('filename')
-    filepath = os.path.join(DATA_DIR, filename)
+    filepath = os.path.join(SAVE_DIR, filename)
     if os.path.exists(filepath):
         return web.FileResponse(filepath)
     return web.json_response({"error": "Archivo no encontrado"}, status=404)
@@ -312,9 +312,9 @@ async def download_dataset(request):
     # Crear un archivo ZIP en memoria
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for root, dirs, files in os.walk(DATA_DIR):
+        for root, dirs, files in os.walk(SAVE_DIR):
             for file in files:
-                if file.endswith('.wav'):
+                if file.endswith('.wav') or file.endswith('.webm'):
                     zip_file.write(os.path.join(root, file), file)
     
     zip_buffer.seek(0)
