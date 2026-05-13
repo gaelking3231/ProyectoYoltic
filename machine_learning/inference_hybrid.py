@@ -327,9 +327,30 @@ async def serve_audio(request):
     return web.json_response({"error": "Archivo no encontrado"}, status=404)
 
 async def download_dataset(request):
-    # Crear un archivo ZIP en memoria
     zip_buffer = io.BytesIO()
+    
+    # 1. Recuperar los datos de Firebase para generar el CSV
+    csv_content = "filename,zapoteco,espanol\n"
+    if db:
+        try:
+            # Traer todo el dataset de Firestore
+            docs = await asyncio.to_thread(lambda: list(db.collection("translations").stream()))
+            for doc in docs:
+                data = doc.to_dict()
+                audio_url = data.get("audioUrl", "")
+                if audio_url:
+                    filename = audio_url.split("/")[-1]
+                    zap = data.get("stt_text", "").replace('"', '""')
+                    esp = data.get("translation", "").replace('"', '""')
+                    csv_content += f'"{filename}","{zap}","{esp}"\n'
+        except Exception as e:
+            print(f"Error generando CSV: {e}")
+
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # 2. Agregar el archivo de texto maestro al ZIP
+        zip_file.writestr("dataset.csv", csv_content)
+        
+        # 3. Empaquetar todos los audios
         for root, dirs, files in os.walk(SAVE_DIR):
             for file in files:
                 if file.endswith('.wav') or file.endswith('.webm'):
