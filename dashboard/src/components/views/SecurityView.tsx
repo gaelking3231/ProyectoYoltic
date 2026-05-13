@@ -5,9 +5,14 @@ export default function SecurityView() {
     <div>
       <div className="section-header">
         <div className="section-title">Seguridad y Control de Acceso</div>
+        <div className="section-actions">
+          <div className="px-3 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 rounded text-[10px] font-bold tracking-widest uppercase">
+            Fase 2 (Próximamente)
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "var(--space-6)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "var(--space-6)", opacity: 0.6, pointerEvents: "none" }}>
         
         {/* Encription Status */}
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>

@@ -68,10 +68,8 @@ export default function LogsView() {
             onChange={e => setFilterType(e.target.value)}
           >
             <option value="all">Filtro: Todos</option>
-            <option value="Antigravity">Antigravity</option>
-            <option value="API">API</option>
-            <option value="Connectivity">Conectividad</option>
-            <option value="DB">Base de Datos</option>
+            <option value="success">Recolección (Éxito)</option>
+            <option value="info">Conexión (Info)</option>
           </select>
           <input 
             type="date" 
@@ -120,8 +118,8 @@ export default function LogsView() {
                           borderRadius: "4px", 
                           fontSize: "10px",
                           fontWeight: 800,
-                          background: log.type === "Antigravity" ? "rgba(139, 92, 246, 0.1)" : log.type === "API" ? "rgba(16, 185, 129, 0.1)" : log.type === "DB" ? "rgba(245, 158, 11, 0.1)" : "rgba(255,255,255,0.05)",
-                          color: log.type === "Antigravity" ? "#A78BFA" : log.type === "API" ? "#34D399" : log.type === "DB" ? "#FBBF24" : "var(--color-text-secondary)",
+                          background: log.type === "success" ? "rgba(16, 185, 129, 0.1)" : log.type === "info" ? "rgba(59, 130, 246, 0.1)" : "rgba(255,255,255,0.05)",
+                          color: log.type === "success" ? "#34D399" : log.type === "info" ? "#60A5FA" : "var(--color-text-secondary)",
                           border: "1px solid currentColor",
                           opacity: 0.8
                         }}>

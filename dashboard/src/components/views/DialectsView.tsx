@@ -12,23 +12,13 @@ export default function DialectsView() {
       <div className="section-header">
         <div className="section-title">Modelos Lingüísticos por Dialecto</div>
         <div className="section-actions">
-          <button 
-            style={{
-              background: "transparent",
-              color: "var(--color-text-primary)",
-              border: "1px solid var(--color-border)",
-              padding: "var(--space-2) var(--space-4)",
-              borderRadius: "var(--radius-md)",
-              cursor: "pointer",
-              fontSize: "var(--font-size-sm)"
-            }}
-          >
-            Sincronizar Cloud
-          </button>
+          <div className="px-3 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 rounded text-[10px] font-bold tracking-widest uppercase">
+            Fase 2 (Próximamente)
+          </div>
         </div>
       </div>
 
-      <div style={{ display: "grid", gap: "var(--space-4)" }}>
+      <div style={{ display: "grid", gap: "var(--space-4)", opacity: 0.6, pointerEvents: "none" }}>
         {MOCK_DIALECTS.map(dialect => (
           <div key={dialect.id} className="glass-card" style={{ display: "flex", alignItems: "center", gap: "var(--space-8)", padding: "var(--space-6)" }}>
             {/* Header info */}

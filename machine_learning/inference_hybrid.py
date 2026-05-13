@@ -196,11 +196,20 @@ async def handle_audio_upload(request):
                 "audioUrl": f"{server_url}/audio/{filename}",
                 "status": "completed",
                 "source": "web_studio",
+                "confidence": 1.0, # 100% porque es validado por un humano
                 "timestamp": firestore.SERVER_TIMESTAMP,
                 "metadata": {
                     "file_path": file_path,
                     "is_training_data": True
                 }
+            })
+            
+            # 📝 ESCRIBIR UN LOG REAL EN EL SISTEMA
+            db.collection("logs").add({
+                "time": "NOW", # Se formateará en el frontend
+                "type": "success",
+                "msg": f"Audio recolectado (Dataset): {zap_text[:15]}...",
+                "timestamp": firestore.SERVER_TIMESTAMP
             })
             
         print(f"[STUDIO] Nuevo audio guardado: {filename} ({zap_text})")
@@ -279,6 +288,15 @@ async def websocket_handler(request):
                         "translation": translation,
                         "latency_ms": latency_ms,
                         "source": "glasses",
+                        "confidence": 0.85, # Confianza estimada del modelo base
+                        "timestamp": firestore.SERVER_TIMESTAMP
+                    })
+                    
+                    # 📝 ESCRIBIR UN LOG REAL DE CONEXIÓN AR
+                    db.collection("logs").add({
+                        "time": "NOW",
+                        "type": "info",
+                        "msg": f"Lentes AR procesaron audio ({latency_ms}ms)",
                         "timestamp": firestore.SERVER_TIMESTAMP
                     })
                 
