@@ -297,21 +297,46 @@ async def websocket_handler(request):
         print("[DESCONEXION] Yoltic Glasses desconectados.")
     return ws
 
+@web.middleware
+async def cors_middleware(request, handler):
+    # Manejar Pre-flight (OPTIONS) de forma automática para todas las rutas
+    if request.method == "OPTIONS":
+        return web.Response(status=204, headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        })
+    
+    try:
+        response = await handler(request)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+    except Exception as e:
+        # Si algo falla, aún así devolvemos cabeceras CORS para ver el error en consola
+        return web.json_response(
+            {"error": str(e)}, 
+            status=500, 
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
+
 async def main():
-    app = web.Application()
+    # Inyectar el middleware de seguridad
+    app = web.Application(middlewares=[cors_middleware])
+    
     app.add_routes([
         web.get('/ws', websocket_handler),
-        web.post('/upload_audio', handle_audio_upload),
-        web.options('/upload_audio', handle_options)
+        web.post('/upload_audio', handle_audio_upload)
     ])
     
+    # Azure usa la variable PORT
     port = int(os.environ.get("PORT", 8080))
+    
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
     
     print(f"--- Servidor AI Yoltic Dual activo en puerto {port} ---")
-    print(f"Endpoints: WS /ws | POST /upload_audio")
+    print(f"Endpoints: WS /ws | POST /upload_audio (CORS Global Activo)")
     await site.start()
     
     # Mantener vivo el servidor
