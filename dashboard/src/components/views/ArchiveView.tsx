@@ -66,8 +66,8 @@ export default function ArchiveView() {
 
   const stats = {
     total: conversations.length,
-    validados: conversations.filter(c => c.corrected_text).length,
-    pendientes: conversations.filter(c => !c.corrected_text).length,
+    validados: conversations.filter(c => c.corrected_text || c.mode === 'WEB_STUDIO').length,
+    pendientes: conversations.filter(c => !c.corrected_text && c.mode !== 'WEB_STUDIO').length,
   };
 
   return (
@@ -248,7 +248,7 @@ export default function ArchiveView() {
             No hay registros disponibles.
           </div>
         ) : filteredItems.map(item => {
-          const isVerified = !!item.corrected_text;
+          const isVerified = !!item.corrected_text || item.mode === 'WEB_STUDIO';
           const isSaving = savingId === item.id;
           const isSaved = savedId === item.id;
           const currentEdit = edits[item.id] !== undefined ? edits[item.id] : (item.corrected_text || "");
@@ -294,16 +294,14 @@ export default function ArchiveView() {
                     <div>
                       <div className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mb-2">Corrección Oficial (ZAP)</div>
                       <div className="text-sm text-emerald-50 font-bold bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20">
-                        {item.corrected_text}
+                        {item.corrected_text || item.originalText}
                       </div>
                     </div>
-                    {item.corrected_spanish && (
-
+                    {(item.corrected_spanish || (item.mode === 'WEB_STUDIO' && item.translatedText)) && (
                       <div>
-                        <div className="text-[9px] font-black text-cyan-500 uppercase tracking-widest mb-2">Significado Validado (ESP)</div>
-                        <div className="text-sm text-cyan-50 font-medium">
-                          {item.corrected_spanish}
-
+                        <div className="text-[9px] font-black text-emerald-500/60 uppercase tracking-widest mb-2">Traducción Oficial (ESP)</div>
+                        <div className="text-sm text-emerald-500 font-medium">
+                          {item.corrected_spanish || item.translatedText}
                         </div>
                       </div>
                     )}
