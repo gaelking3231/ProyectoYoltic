@@ -80,7 +80,7 @@ export default function DonationView() {
       formData.append("espanol", currentPhrase.esp);
 
       // URL de tu servidor de Python en Azure
-      const response = await fetch('https://yoltic-inference-ai-gre0cqg8cvcyc9cn.westeurope-01.azurewebsites.net/upload_audio', {
+      const response = await fetch('https://yoltic-inference-ai-gre0cqg8cvcye9en.westeurope-01.azurewebsites.net/upload_audio', {
         method: "POST",
         body: formData,
       });
