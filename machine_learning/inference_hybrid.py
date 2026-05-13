@@ -188,11 +188,12 @@ async def handle_audio_upload(request):
             f.write(audio_file.file.read())
             
         # Sincronizar con Firestore para que aparezca en el Dataset (ML)
+        server_url = "https://yoltic-inference-ai-gre0cqg8cvcye9en.westeurope-01.azurewebsites.net"
         if db:
             db.collection("translations").document(doc_id).set({
                 "stt_text": zap_text,
                 "translation": esp_text,
-                "audioUrl": f"AZURE_LOCAL:{filename}", # Marca especial para saber que está en Azure
+                "audioUrl": f"{server_url}/audio/{filename}",
                 "status": "completed",
                 "source": "web_studio",
                 "timestamp": firestore.SERVER_TIMESTAMP,
@@ -297,49 +298,65 @@ async def websocket_handler(request):
         print("[DESCONEXION] Yoltic Glasses desconectados.")
     return ws
 
+import zipfile
+import io
+
+async def serve_audio(request):
+    filename = request.match_info.get('filename')
+    filepath = os.path.join(DATA_DIR, filename)
+    if os.path.exists(filepath):
+        return web.FileResponse(filepath)
+    return web.json_response({"error": "Archivo no encontrado"}, status=404)
+
+async def download_dataset(request):
+    # Crear un archivo ZIP en memoria
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for root, dirs, files in os.walk(DATA_DIR):
+            for file in files:
+                if file.endswith('.wav'):
+                    zip_file.write(os.path.join(root, file), file)
+    
+    zip_buffer.seek(0)
+    return web.Response(
+        body=zip_buffer.read(),
+        content_type='application/zip',
+        headers={'Content-Disposition': 'attachment; filename=yoltic_dataset.zip'}
+    )
+
 @web.middleware
 async def cors_middleware(request, handler):
-    # Manejar Pre-flight (OPTIONS) de forma automática para todas las rutas
     if request.method == "OPTIONS":
         return web.Response(status=204, headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type, Authorization",
         })
-    
     try:
         response = await handler(request)
         response.headers["Access-Control-Allow-Origin"] = "*"
         return response
     except Exception as e:
-        # Si algo falla, aún así devolvemos cabeceras CORS para ver el error en consola
-        return web.json_response(
-            {"error": str(e)}, 
-            status=500, 
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return web.json_response({"error": str(e)}, status=500, headers={"Access-Control-Allow-Origin": "*"})
 
 async def main():
-    # Inyectar el middleware de seguridad
     app = web.Application(middlewares=[cors_middleware])
-    
     app.add_routes([
         web.get('/ws', websocket_handler),
-        web.post('/upload_audio', handle_audio_upload)
+        web.post('/upload_audio', handle_audio_upload),
+        web.get('/audio/{filename}', serve_audio),
+        web.get('/descargar_dataset', download_dataset),
+        web.get('/', lambda r: web.Response(text="Servidor Yoltic Activo"))
     ])
     
-    # Azure usa la variable PORT
     port = int(os.environ.get("PORT", 8080))
-    
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
     
     print(f"--- Servidor AI Yoltic Dual activo en puerto {port} ---")
-    print(f"Endpoints: WS /ws | POST /upload_audio (CORS Global Activo)")
     await site.start()
     
-    # Mantener vivo el servidor
     while True:
         await asyncio.sleep(3600)
 
