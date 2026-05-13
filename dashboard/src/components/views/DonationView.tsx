@@ -103,46 +103,10 @@ export default function DonationView() {
 
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center justify-between mb-8">
+    <div className="flex flex-col h-full space-y-4 p-2 sm:p-4 md:p-6 overflow-y-auto custom-scrollbar">
+      {/* Header Responsivo */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-2 sm:space-y-0">
         <div>
-          <h2 className="text-2xl font-black text-white tracking-tighter uppercase">Studio de Voces</h2>
-          <p className="text-xs text-[var(--text-dim)] font-bold tracking-widest uppercase mt-1">Preservación Lingüística en Tiempo Real</p>
-        </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--neon-green)]/10 border border-[var(--neon-green)]/20">
-          <div className="w-1.5 h-1.5 rounded-full bg-[var(--neon-green)] animate-pulse" />
-          <span className="text-[10px] font-bold text-[var(--neon-green)] uppercase tracking-tighter">Micrófono Listo</span>
-        </div>
-      </div>
-
-      <div className="glass-card p-10 relative overflow-hidden group">
-        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[var(--neon-green)]/30 to-transparent" />
-        
-        <div className="text-center space-y-4 mb-10">
-          <span className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-[0.2em]">Lee la frase en voz alta</span>
-          <motion.h1 
-            key={currentPhrase.zap}
-            initial={{ y: 10, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            className="text-5xl font-black text-white tracking-tighter"
-          >
-            {currentPhrase.zap}
-          </motion.h1>
-          <p className="text-xl text-[var(--neon-cyan)] font-medium opacity-80 italic">"{currentPhrase.esp}"</p>
-        </div>
-
-        <div className="flex flex-col items-center gap-8">
-          <AnimatePresence mode="wait">
-            {!audioBlob ? (
-              <motion.button
-                key="record"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={isRecording ? stopRecording : startRecording}
-                className={`w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500 ${
                   isRecording 
                     ? 'bg-rose-500 shadow-[0_0_30px_rgba(244,63,94,0.4)] animate-pulse' 
                     : 'bg-[var(--neon-green)] shadow-[0_0_30px_rgba(16,185,129,0.3)]'
