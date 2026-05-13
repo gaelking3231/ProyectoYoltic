@@ -7,7 +7,7 @@ import { db } from "@/lib/firebase";
 import WaveformPlayer from "../WaveformPlayer";
 
 export default function ArchiveView() {
-  const { conversations, loading } = useConversations(100);
+  const { conversations, loading } = useConversations(1000);
   const [searchTerm, setSearchTerm] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
