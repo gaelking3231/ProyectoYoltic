@@ -67,38 +67,12 @@ except Exception as e:
 
 
 # ==========================================
-# MODELOS LOCALES CTRANSLATE2
+# MODELOS (SOLO CLOUD PARA ESTABILIDAD)
 # ==========================================
-try:
-    import ctranslate2
-    import transformers
-    CT2_AVAILABLE = True
-except ImportError:
-    CT2_AVAILABLE = False
-    print("⚠️ Faltan librerías locales (ctranslate2, transformers).")
+CT2_AVAILABLE = False
+LOCAL_READY = False
+print("--- [INFO] Usando Modo Cloud (Optimizado para Azure Basic) ---")
 
-BASE_DIR = os.path.dirname(__file__)
-WHISPER_CT2_PATH = os.path.join(BASE_DIR, "whisper_ct2")
-NLLB_CT2_PATH = os.path.join(BASE_DIR, "nllb_ct2")
-
-whisper_model = None
-whisper_processor = None
-nllb_model = None
-nllb_tokenizer = None
-
-def init_local_models():
-    global whisper_model, whisper_processor, nllb_model, nllb_tokenizer
-    if CT2_AVAILABLE and os.path.exists(WHISPER_CT2_PATH) and os.path.exists(NLLB_CT2_PATH):
-        print("🚀 Inicializando modelos locales CTranslate2 (INT8)...")
-        whisper_model = ctranslate2.models.Whisper(WHISPER_CT2_PATH, device="auto", compute_type="int8")
-        whisper_processor = transformers.WhisperProcessor.from_pretrained("openai/whisper-small")
-        
-        nllb_model = ctranslate2.Translator(NLLB_CT2_PATH, device="auto", compute_type="int8")
-        nllb_tokenizer = transformers.AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
-        return True
-    return False
-
-LOCAL_READY = init_local_models()
 
 # ==========================================
 # LÓGICA DE INFERENCIA
@@ -450,26 +424,36 @@ async def cors_middleware(request, handler):
         return web.json_response({"error": str(e)}, status=500, headers={"Access-Control-Allow-Origin": "*"})
 
 async def main():
-    app = web.Application(middlewares=[cors_middleware])
-    app.add_routes([
-        web.get('/ws', websocket_handler),
-        web.post('/upload_audio', handle_audio_upload),
-        web.post('/api/translate', handle_translate),
-        web.get('/audio/{filename}', serve_audio),
-        web.get('/descargar_dataset', download_dataset),
-        web.get('/', lambda r: web.Response(text="Servidor Yoltic Activo"))
-    ])
-    
-    port = int(os.environ.get("PORT", 8080))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    
-    print(f"--- Servidor AI Yoltic Dual activo en puerto {port} ---")
-    await site.start()
-    
-    while True:
-        await asyncio.sleep(3600)
+    try:
+        app = web.Application(middlewares=[cors_middleware])
+        app.add_routes([
+            web.get('/ws', websocket_handler),
+            web.post('/upload_audio', handle_audio_upload),
+            web.post('/api/translate', handle_translate),
+            web.get('/audio/{filename}', serve_audio),
+            web.get('/descargar_dataset', download_dataset),
+            web.get('/', lambda r: web.Response(text="Servidor Yoltic Activo"))
+        ])
+        
+        port = int(os.environ.get("PORT", 8080))
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        
+        print(f"--- [OK] Servidor Yoltic listo en puerto {port} ---", flush=True)
+        await site.start()
+        
+        # Bucle de latido (Heartbeat) para estabilidad
+        counter = 0
+        while True:
+            await asyncio.sleep(60) # Cada minuto
+            counter += 1
+            if counter % 10 == 0: # Cada 10 mins
+                print(f"--- [Latido] Servidor activo ({counter} min) ---", flush=True)
+                
+    except Exception as e:
+        print(f"--- [CRITICAL ERROR] El loop principal falló: {e} ---", flush=True)
+        raise e
 
 if __name__ == "__main__":
     try:
