@@ -28,8 +28,23 @@ import firebase_admin
 from firebase_admin import credentials, firestore, storage
 import uuid
 
-openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+openai_key = os.environ.get("OPENAI_API_KEY")
+if openai_key:
+    openai_key = openai_key.strip()
+    if not openai_key.startswith("sk-"):
+        openai_key = "sk-proj-" + openai_key
+    print(f"--- [DEBUG] OpenAI Key cargada (inicia con: {openai_key[:12]}...) ---", flush=True)
+
+openai_client = OpenAI(api_key=openai_key)
+
+anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+if anthropic_key:
+    anthropic_key = anthropic_key.strip()
+    if not anthropic_key.startswith("sk-ant-"):
+        anthropic_key = "sk-ant-" + anthropic_key
+    print(f"--- [DEBUG] Anthropic Key cargada (inicia con: {anthropic_key[:12]}...) ---", flush=True)
+
+anthropic_client = Anthropic(api_key=anthropic_key)
 
 # Azure Config
 azure_speech_key = os.environ.get("AZURE_SPEECH_KEY")
