@@ -238,6 +238,7 @@ async def handle_translate(request):
         audio_np = np.frombuffer(pcm_original, dtype=np.int16).astype(np.float32) / 32768.0
         
         # Usar /tmp para archivos temporales en Azure Linux
+        doc_id = str(uuid.uuid4())
         temp_dir = "/tmp/yoltic_audio"
         os.makedirs(temp_dir, exist_ok=True)
         wav_path = f"{temp_dir}/{doc_id}.wav"
