@@ -136,12 +136,14 @@ def run_cloud_inference(wav_path):
     
     # 2. Traducción Claude API (Bidireccional con Diccionario Base)
     claude_msg = anthropic_client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-3-5-sonnet-20240620",
         max_tokens=50,
         system="Eres un traductor bilingüe experto en Zapoteco del Istmo y Español. Si el texto de entrada está en Español, tradúcelo al Zapoteco del Istmo. Si el texto está en Zapoteco, tradúcelo al Español. Devuelve SOLO la traducción directa.\n\nDICCIONARIO BÁSICO:\n- Padiuxhi / Padiuxi = Hola / Buenos días\n- Sicarú siadó' = Buenos días\n- Sicarú huadxí = Buenas tardes\n- Ximodo nuu lu' = ¿Cómo estás?\n- Xquixe pe' = Gracias\n- Nda / Ola = Hola",
         messages=[{"role": "user", "content": stt_text}]
     )
-    return stt_text, claude_msg.content[0].text.strip()
+    translation = claude_msg.content[0].text.strip()
+    print(f"STT: {stt_text} -> TRAD: {translation}")
+    return stt_text, translation
 
 def generate_azure_tts(text):
     """Genera audio PCM de alta calidad usando Azure Neural TTS"""
