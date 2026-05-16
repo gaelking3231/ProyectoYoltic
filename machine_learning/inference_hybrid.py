@@ -93,31 +93,42 @@ def run_local_inference(audio_np):
     return stt_text, translation
 
 def run_cloud_inference(wav_path):
-    # 1. STT Whisper API (Forzamos español para evitar alucinaciones en coreano/japonés)
-    with open(wav_path, "rb") as audio_file:
-        transcript = openai_client.audio.transcriptions.create(
-            model="whisper-1", 
-            file=audio_file,
-            temperature=0.2,
-            prompt="Padiuxhi, Sicarú siadó', Sicarú huadxí, Sicarú gueela', Ximodo nuu lu', Xquixe pe', Zapoteco del Istmo"
+    stt_text, translation = "...", "Error"
+    try:
+        print(f"--- [STT] Enviando audio a OpenAI Whisper... ---", flush=True)
+        # 1. STT Whisper API
+        with open(wav_path, "rb") as audio_file:
+            transcript = openai_client.audio.transcriptions.create(
+                model="whisper-1", 
+                file=audio_file,
+                temperature=0.2,
+                prompt="Padiuxhi, Sicarú siadó', Sicarú huadxí, Sicarú gueela', Ximodo nuu lu', Xquixe pe', Zapoteco del Istmo"
+            )
+        stt_text = transcript.text.strip()
+        print(f"--- [STT] Resultado: {stt_text} ---", flush=True)
+        
+        # Filtro contra alucinaciones
+        lower_stt = stt_text.lower()
+        if "amara.org" in lower_stt or "subtítulos" in lower_stt or "suscríbete" in lower_stt or stt_text == "":
+            stt_text = "..."
+        
+        if stt_text == "...":
+            return "...", "..."
+
+        print(f"--- [LLM] Enviando a Claude para traducción... ---", flush=True)
+        # 2. Traducción Claude API
+        claude_msg = anthropic_client.messages.create(
+            model="claude-3-5-sonnet-20240620",
+            max_tokens=50,
+            system="Eres un traductor bilingüe experto en Zapoteco del Istmo y Español. Si el texto de entrada está en Español, tradúcelo al Zapoteco del Istmo. Si el texto está en Zapoteco, tradúcelo al Español. Devuelve SOLO la traducción directa.",
+            messages=[{"role": "user", "content": stt_text}]
         )
-    stt_text = transcript.text.strip()
-    
-    # Filtro contra alucinaciones conocidas de Whisper en silencio/ruido
-    lower_stt = stt_text.lower()
-    if "amara.org" in lower_stt or "subtítulos" in lower_stt or "suscríbete" in lower_stt or stt_text == "":
-        stt_text = "..."
-    
-    # 2. Traducción Claude API (Bidireccional con Diccionario Base)
-    claude_msg = anthropic_client.messages.create(
-        model="claude-3-5-sonnet-20240620",
-        max_tokens=50,
-        system="Eres un traductor bilingüe experto en Zapoteco del Istmo y Español. Si el texto de entrada está en Español, tradúcelo al Zapoteco del Istmo. Si el texto está en Zapoteco, tradúcelo al Español. Devuelve SOLO la traducción directa.\n\nDICCIONARIO BÁSICO:\n- Padiuxhi / Padiuxi = Hola / Buenos días\n- Sicarú siadó' = Buenos días\n- Sicarú huadxí = Buenas tardes\n- Ximodo nuu lu' = ¿Cómo estás?\n- Xquixe pe' = Gracias\n- Nda / Ola = Hola",
-        messages=[{"role": "user", "content": stt_text}]
-    )
-    translation = claude_msg.content[0].text.strip()
-    print(f"STT: {stt_text} -> TRAD: {translation}")
-    return stt_text, translation
+        translation = claude_msg.content[0].text.strip()
+        print(f"--- [FINAL] STT: {stt_text} -> TRAD: {translation} ---", flush=True)
+        return stt_text, translation
+    except Exception as e:
+        print(f"--- [ERROR INFERENCIA] {str(e)} ---", flush=True)
+        return stt_text, "Error"
 
 def generate_azure_tts(text):
     """Genera audio PCM de alta calidad usando Azure Neural TTS"""
@@ -226,9 +237,10 @@ async def handle_translate(request):
         pcm_boosted = audioop.mul(pcm_original, 2, 5.0) 
         audio_np = np.frombuffer(pcm_original, dtype=np.int16).astype(np.float32) / 32768.0
         
-        doc_id = str(uuid.uuid4())
-        wav_path = f"temp_audio/{doc_id}.wav"
-        os.makedirs("temp_audio", exist_ok=True)
+        # Usar /tmp para archivos temporales en Azure Linux
+        temp_dir = "/tmp/yoltic_audio"
+        os.makedirs(temp_dir, exist_ok=True)
+        wav_path = f"{temp_dir}/{doc_id}.wav"
         
         with wave.open(wav_path, 'wb') as wf:
             wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
@@ -305,9 +317,10 @@ async def websocket_handler(request):
                     pcm_boosted = audioop.mul(pcm_original, 2, 5.0) 
                     audio_np = np.frombuffer(pcm_original, dtype=np.int16).astype(np.float32) / 32768.0
                     
-                    doc_id = str(uuid.uuid4())
-                    wav_path = f"temp_audio/{doc_id}.wav"
-                    os.makedirs("temp_audio", exist_ok=True)
+                    # Usar /tmp para archivos temporales en Azure Linux
+                    temp_dir = "/tmp/yoltic_audio"
+                    os.makedirs(temp_dir, exist_ok=True)
+                    wav_path = f"{temp_dir}/{doc_id}.wav"
                     
                     with wave.open(wav_path, 'wb') as wf:
                         wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
