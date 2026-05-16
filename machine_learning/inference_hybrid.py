@@ -294,7 +294,6 @@ async def handle_translate(request):
         print(f"Error HTTP Translate: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-@routes.get('/ws')
 async def websocket_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
