@@ -232,7 +232,67 @@ async def handle_options(request):
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type"
     })
+@routes.post('/api/translate')
+async def handle_translate(request):
+    try:
+        start_time = time.time()
+        pcm_incoming = await request.read()
+        
+        if not pcm_incoming:
+            return web.json_response({"error": "No audio data"}, status=400)
+            
+        # Procesamiento de audio
+        try:
+            pcm_original = audioop.tomono(pcm_incoming, 2, 1, 0)
+        except:
+            pcm_original = pcm_incoming
+            
+        pcm_boosted = audioop.mul(pcm_original, 2, 5.0) 
+        audio_np = np.frombuffer(pcm_original, dtype=np.int16).astype(np.float32) / 32768.0
+        
+        doc_id = str(uuid.uuid4())
+        wav_path = f"temp_audio/{doc_id}.wav"
+        os.makedirs("temp_audio", exist_ok=True)
+        
+        with wave.open(wav_path, 'wb') as wf:
+            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
+            wf.writeframes(pcm_boosted)
+            
+        # Inferencia
+        stt_text, translation = "...", "Error"
+        try:
+            stt_text, translation = await asyncio.to_thread(run_cloud_inference, wav_path)
+        except Exception as e:
+            print(f"Error inferencia: {e}")
+            
+        latency_ms = int((time.time() - start_time) * 1000)
+        
+        # Sincronizar Firestore
+        if db:
+            db.collection("translations").document(doc_id).set({
+                "stt_text": stt_text,
+                "translation": translation,
+                "latency_ms": latency_ms,
+                "source": "glasses_http",
+                "confidence": 0.85,
+                "timestamp": firestore.SERVER_TIMESTAMP
+            })
+            db.collection("logs").add({
+                "time": "NOW",
+                "type": "info",
+                "msg": f"Lentes AR (HTTP) procesaron audio ({latency_ms}ms)",
+                "timestamp": firestore.SERVER_TIMESTAMP
+            })
+            
+        return web.json_response({
+            "translation": translation,
+            "latency_ms": latency_ms
+        })
+    except Exception as e:
+        print(f"Error HTTP Translate: {e}")
+        return web.json_response({"error": str(e)}, status=500)
 
+@routes.get('/ws')
 async def websocket_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
