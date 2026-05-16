@@ -245,71 +245,81 @@ async def websocket_handler(request):
         "source": "system"
     }))
 
+    # Buffer for chunked audio
+    audio_buffer = bytearray()
+    start_time = None
+
     try:
         async for msg in ws:
             if msg.type == web.WSMsgType.BINARY:
-                start_time = time.time()
-                pcm_incoming = msg.data
+                if not audio_buffer:
+                    start_time = time.time()
+                audio_buffer.extend(msg.data)
                 
-                # Procesamiento de audio (igual que antes)
-                try:
-                    pcm_original = audioop.tomono(pcm_incoming, 2, 1, 0)
-                except:
-                    pcm_original = pcm_incoming
-                
-                pcm_boosted = audioop.mul(pcm_original, 2, 5.0) 
-                audio_np = np.frombuffer(pcm_original, dtype=np.int16).astype(np.float32) / 32768.0
-                
-                doc_id = str(uuid.uuid4())
-                wav_path = f"temp_audio/{doc_id}.wav"
-                os.makedirs("temp_audio", exist_ok=True)
-                
-                with wave.open(wav_path, 'wb') as wf:
-                    wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
-                    wf.writeframes(pcm_boosted)
-                
-                # Inferencia
-                stt_text, translation = "...", "Error"
-                source = "cloud"
-                try:
-                    stt_text, translation = await asyncio.to_thread(run_cloud_inference, wav_path)
-                except Exception as e:
-                    print(f"Error inferencia: {e}")
-                
-                # TTS
-                audio_16k = await asyncio.to_thread(generate_azure_tts, translation)
-                
-                latency_ms = int((time.time() - start_time) * 1000)
-                
-                # Sincronizar Firestore
-                if db:
-                    db.collection("translations").document(doc_id).set({
-                        "stt_text": stt_text,
+            elif msg.type == web.WSMsgType.TEXT:
+                if msg.data == "END_AUDIO" and len(audio_buffer) > 0:
+                    pcm_incoming = bytes(audio_buffer)
+                    audio_buffer = bytearray() # Reset buffer
+                    
+                    # Procesamiento de audio (igual que antes)
+                    try:
+                        pcm_original = audioop.tomono(pcm_incoming, 2, 1, 0)
+                    except:
+                        pcm_original = pcm_incoming
+                    
+                    pcm_boosted = audioop.mul(pcm_original, 2, 5.0) 
+                    audio_np = np.frombuffer(pcm_original, dtype=np.int16).astype(np.float32) / 32768.0
+                    
+                    doc_id = str(uuid.uuid4())
+                    wav_path = f"temp_audio/{doc_id}.wav"
+                    os.makedirs("temp_audio", exist_ok=True)
+                    
+                    with wave.open(wav_path, 'wb') as wf:
+                        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
+                        wf.writeframes(pcm_boosted)
+                    
+                    # Inferencia
+                    stt_text, translation = "...", "Error"
+                    source = "cloud"
+                    try:
+                        stt_text, translation = await asyncio.to_thread(run_cloud_inference, wav_path)
+                    except Exception as e:
+                        print(f"Error inferencia: {e}")
+                    
+                    # TTS
+                    audio_16k = await asyncio.to_thread(generate_azure_tts, translation)
+                    
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    
+                    # Sincronizar Firestore
+                    if db:
+                        db.collection("translations").document(doc_id).set({
+                            "stt_text": stt_text,
+                            "translation": translation,
+                            "latency_ms": latency_ms,
+                            "source": "glasses",
+                            "confidence": 0.85, # Confianza estimada del modelo base
+                            "timestamp": firestore.SERVER_TIMESTAMP
+                        })
+                        
+                        # 📝 ESCRIBIR UN LOG REAL DE CONEXIÓN AR
+                        db.collection("logs").add({
+                            "time": "NOW",
+                            "type": "info",
+                            "msg": f"Lentes AR procesaron audio ({latency_ms}ms)",
+                            "timestamp": firestore.SERVER_TIMESTAMP
+                        })
+                    
+                    # Responder a los lentes
+                    await ws.send_str(json.dumps({
                         "translation": translation,
-                        "latency_ms": latency_ms,
-                        "source": "glasses",
-                        "confidence": 0.85, # Confianza estimada del modelo base
-                        "timestamp": firestore.SERVER_TIMESTAMP
-                    })
+                        "latency_ms": latency_ms
+                    }))
                     
-                    # 📝 ESCRIBIR UN LOG REAL DE CONEXIÓN AR
-                    db.collection("logs").add({
-                        "time": "NOW",
-                        "type": "info",
-                        "msg": f"Lentes AR procesaron audio ({latency_ms}ms)",
-                        "timestamp": firestore.SERVER_TIMESTAMP
-                    })
-                
-                # Responder a los lentes
-                await ws.send_str(json.dumps({
-                    "translation": translation,
-                    "latency_ms": latency_ms
-                }))
-                
-                if audio_16k:
-                    await asyncio.sleep(0.1)
-                    await ws.send_bytes(audio_16k)
-                    
+                    if audio_16k:
+                        await asyncio.sleep(0.1)
+                        await ws.send_bytes(audio_16k)
+                        
             elif msg.type == web.WSMsgType.ERROR:
                 print(f'ws connection closed with exception {ws.exception()}')
     finally:
