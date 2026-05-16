@@ -236,6 +236,7 @@ async def handle_options(request):
     })
 async def handle_translate(request):
     try:
+        print("--- [HTTP] Nueva solicitud de traducción recibida ---", flush=True)
         start_time = time.time()
         pcm_incoming = await request.read()
         
