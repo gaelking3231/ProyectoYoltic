@@ -234,7 +234,6 @@ async def handle_options(request):
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type"
     })
-@routes.post('/api/translate')
 async def handle_translate(request):
     try:
         start_time = time.time()
@@ -455,6 +454,7 @@ async def main():
     app.add_routes([
         web.get('/ws', websocket_handler),
         web.post('/upload_audio', handle_audio_upload),
+        web.post('/api/translate', handle_translate),
         web.get('/audio/{filename}', serve_audio),
         web.get('/descargar_dataset', download_dataset),
         web.get('/', lambda r: web.Response(text="Servidor Yoltic Activo"))
