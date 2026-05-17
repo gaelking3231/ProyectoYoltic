@@ -153,18 +153,46 @@ def get_glossary_prompt_sync():
 def run_cloud_inference(wav_path):
     stt_text, translation = "...", "Error"
     try:
-        print(f"--- [STT] Enviando audio a OpenAI Whisper... ---", flush=True)
-        # 1. STT Whisper API
-        with open(wav_path, "rb") as audio_file:
-            transcript = openai_client.audio.transcriptions.create(
-                model="whisper-1", 
-                file=audio_file,
-                temperature=0.2,
-                prompt="Padiuxhi, Sicarú siadó', Sicarú huadxí, Sicarú gueela', Ximodo nuu lu', Xquixe pe', Zapoteco del Istmo"
-            )
-        stt_text = transcript.text.strip()
-        print(f"--- [STT] Resultado: {stt_text} ---", flush=True)
+        # Cargar variables de token para Hugging Face
+        hf_token = os.environ.get("HF_API_TOKEN")
+        headers = {}
+        if hf_token:
+            headers["Authorization"] = f"Bearer {hf_token.strip()}"
+            
+        hf_model = "gaelking321/yoltic-whisper-zapoteco"
+        hf_url = f"https://api-inference.huggingface.co/models/{hf_model}"
         
+        print(f"--- [STT] Enviando audio a tu modelo en Hugging Face ({hf_model})... ---", flush=True)
+        try:
+            with open(wav_path, "rb") as f:
+                audio_bytes = f.read()
+            
+            import requests
+            response = requests.post(hf_url, headers=headers, data=audio_bytes, timeout=20)
+            
+            if response.status_code == 200:
+                result = response.json()
+                stt_text = result.get("text", "").strip()
+                print(f"--- [STT HuggingFace] Transcripción exitosa: {stt_text} ---", flush=True)
+            elif response.status_code == 503:
+                print("--- [STT HuggingFace] El modelo se está cargando (503). Usando fallback de OpenAI Whisper... ---", flush=True)
+                raise Exception("Hugging Face model loading")
+            else:
+                print(f"--- [STT HuggingFace] Error de API ({response.status_code}): {response.text}. Usando fallback... ---", flush=True)
+                raise Exception(f"HF status code {response.status_code}")
+        except Exception as hf_err:
+            print(f"--- [STT Fallback] Error en Hugging Face ({hf_err}). Usando OpenAI Whisper... ---", flush=True)
+            # Fallback a Whisper de OpenAI
+            with open(wav_path, "rb") as audio_file:
+                transcript = openai_client.audio.transcriptions.create(
+                    model="whisper-1", 
+                    file=audio_file,
+                    temperature=0.2,
+                    prompt="Padiuxhi, Sicarú siadó', Sicarú huadxí, Sicarú gueela', Ximodo nuu lu', Xquixe pe', Zapoteco del Istmo"
+                )
+            stt_text = transcript.text.strip()
+            print(f"--- [STT Fallback] Resultado OpenAI Whisper: {stt_text} ---", flush=True)
+
         # Filtro contra alucinaciones
         lower_stt = stt_text.lower()
         if "amara.org" in lower_stt or "subtítulos" in lower_stt or "suscríbete" in lower_stt or stt_text == "":
