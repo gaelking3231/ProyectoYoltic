@@ -315,19 +315,39 @@ void processTranslation() {
         int httpCode = httpAudio.GET();
         if (httpCode == HTTP_CODE_OK) {
           int len = httpAudio.getSize();
-          if (len > 0) {
-            unsigned char *decodedAudio = (unsigned char *)ps_malloc(len);
-            if (decodedAudio) {
-              WiFiClient *stream = httpAudio.getStreamPtr();
-              int bytesRead = stream->readBytes(decodedAudio, len);
-              Serial.printf("Audio descargado de URL: %d bytes. Reproduciendo...\n", bytesRead);
+          if (len <= 0) {
+            // Si el servidor no envía Content-Length (ej. transfer-encoding chunked), asignamos 128KB
+            len = 128 * 1024;
+          }
+          unsigned char *decodedAudio = (unsigned char *)ps_malloc(len);
+          if (decodedAudio) {
+            WiFiClient *stream = httpAudio.getStreamPtr();
+            int bytesRead = 0;
+            long startTime = millis();
+            // Leer mientras estemos conectados, tengamos espacio y no pasen más de 5 segundos
+            while (httpAudio.connected() && bytesRead < len && (millis() - startTime < 5000)) {
+              int avail = stream->available();
+              if (avail > 0) {
+                int toRead = min(avail, (int)(len - bytesRead));
+                int r = stream->read(decodedAudio + bytesRead, toRead);
+                if (r > 0) {
+                  bytesRead += r;
+                }
+              } else {
+                delay(10);
+              }
+            }
+            if (bytesRead > 0) {
+              Serial.printf("Audio descargado exitosamente: %d bytes. Reproduciendo...\n", bytesRead);
               showOLED("Hablando...");
               playRawAudio(decodedAudio, bytesRead);
               showOLED(translation ? String(translation) : "Listo");
-              free(decodedAudio);
             } else {
-              Serial.println("Error: Sin memoria en PSRAM para descargar audio.");
+              Serial.println("Error: 0 bytes leídos del audio.");
             }
+            free(decodedAudio);
+          } else {
+            Serial.println("Error: Sin memoria en PSRAM para descargar audio.");
           }
         } else {
           Serial.printf("Error al descargar audio TTS: %d\n", httpCode);
