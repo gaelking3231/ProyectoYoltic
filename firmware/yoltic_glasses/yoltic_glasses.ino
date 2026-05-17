@@ -2,7 +2,8 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
-#include <ArduinoWebsockets.h> // REEMPLAZAMOS HTTPClient por ArduinoWebsockets
+#include <ArduinoWebsockets.h>
+#include <HTTPClient.h>
 #include <WiFi.h>
 #include <Wire.h>
 #include <driver/i2s.h>
@@ -14,9 +15,12 @@ WebsocketsClient client;
 // Configuración WiFi y Servidor Híbrido
 // ==========================================
 const char *ssid = "Mega_2.4G_C5B0";
-const char *password = "ehs9u5cY"; // REEMPLAZAR CON CONTRASEÑA REAL
-const char *websockets_server = "192.168.1.46";
-const uint16_t websockets_port = 8080;
+const char *password = "ehs9u5cY"; // Sin espacios al final
+// ¡AQUÍ ESTÁ EL PROBLEMA! Azure cambió las URLs para incluir un código aleatorio por seguridad.
+const char *websockets_server = "yoltic-inference-ai-gre0cqg8cvcye9en.westeurope-01.azurewebsites.net";
+// Azure requiere HTTPS/WSS obligatoriamente. El puerto de WSS es 443.
+const uint16_t websockets_port = 443;
+const char *websockets_url = "wss://yoltic-inference-ai-gre0cqg8cvcye9en.westeurope-01.azurewebsites.net/ws";
 
 // ==========================================
 // Configuración OLED (I2C)
@@ -41,9 +45,10 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // Configuración de Audio
 // ==========================================
 #define SAMPLE_RATE 16000
-#define RECORD_TIME 5 // Segundos de grabación
+#define RECORD_TIME 5 // 5 Segundos de grabación restaurados
 #define AUDIO_BUFFER_SIZE                                                      \
-  (SAMPLE_RATE * 4 * RECORD_TIME) // 16kHz * 16-bit(2 bytes) * 2 Canales * 5s = 320KB
+  (SAMPLE_RATE * 4 *                                                           \
+   RECORD_TIME) // 16kHz * 16-bit(2 bytes) * 2 Canales * 5s = 320KB
 uint8_t *audioBuffer;
 
 // Generar cabecera WAV de 44 bytes para facilitar el procesamiento en el
@@ -126,6 +131,57 @@ void showOLED(String text) {
   display.display();
 }
 
+void playRawAudio(const uint8_t *decodedAudio, size_t outputLength) {
+  if (!decodedAudio || outputLength == 0)
+    return;
+
+  size_t bytesWritten;
+  int16_t *mono_samples = (int16_t *)decodedAudio;
+  size_t num_mono_samples = outputLength / 2;
+
+  size_t stereo_length = outputLength * 2;
+  int16_t *stereo_samples = (int16_t *)ps_malloc(stereo_length);
+
+  if (stereo_samples) {
+    for (size_t i = 0; i < num_mono_samples; i++) {
+      stereo_samples[i * 2] = mono_samples[i];     // L
+      stereo_samples[i * 2 + 1] = mono_samples[i]; // R
+    }
+
+    size_t chunk_size = 4096;
+    for (size_t i = 0; i < stereo_length; i += chunk_size) {
+      size_t to_write =
+          (stereo_length - i > chunk_size) ? chunk_size : (stereo_length - i);
+      i2s_write(I2S_PORT, ((uint8_t *)stereo_samples) + i, to_write,
+                &bytesWritten, portMAX_DELAY);
+    }
+
+    free(stereo_samples);
+  } else {
+    Serial.println("Error: Sin memoria para buffer Stereo.");
+  }
+}
+
+bool messageReceived = false;
+String lastPayload = "";
+
+void onMessageCallback(WebsocketsMessage message) {
+  if (message.isText()) {
+    String data = message.data();
+    // Ignorar el mensaje de bienvenida del servidor para no desincronizar
+    if (data.indexOf("YOLTIC") != -1 && data.indexOf("Conectado") != -1) {
+      return;
+    }
+    lastPayload = data;
+    messageReceived = true;
+  } else if (message.isBinary()) {
+    Serial.println("Audio binario recibido!");
+    showOLED("Hablando...");
+    playRawAudio((const uint8_t *)message.c_str(), message.length());
+    showOLED("ESCUCHANDO"); // Restaurar pantalla
+  }
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -168,7 +224,12 @@ void setup() {
   // Conectar a WebSockets
   showOLED("Conectando\nServidor");
   client.onMessage(onMessageCallback);
-  bool connected = client.connect(websockets_server, websockets_port, "/");
+
+  // Permitir certificados de Azure sin verificacion estricta SSL
+  client.setInsecure();
+
+  // Conectar a WebSockets en la ruta /ws usando la URL segura WSS://
+  bool connected = client.connect(websockets_url);
   if (connected) {
     showOLED("Listo!");
     Serial.println("Conectado a Servidor WebSocket Híbrido");
@@ -181,11 +242,24 @@ void setup() {
 void recordAudio() {
   showOLED("ESCUCHANDO");
   size_t bytesRead = 0;
-  Serial.println("Grabando audio...");
-  // Grabar los datos I2S directamente al buffer
-  i2s_read(I2S_PORT, (void *)(audioBuffer + 44), AUDIO_BUFFER_SIZE, &bytesRead,
-           portMAX_DELAY);
-  Serial.printf("Grabación finalizada. Bytes: %d\n", bytesRead);
+  size_t totalBytesRead = 0;
+  size_t chunkSize = 4096; // 4KB por ciclo
+
+  Serial.println("Grabando audio y manteniendo WS vivo...");
+
+  while (totalBytesRead < AUDIO_BUFFER_SIZE) {
+    size_t toRead = AUDIO_BUFFER_SIZE - totalBytesRead;
+    if (toRead > chunkSize)
+      toRead = chunkSize;
+
+    i2s_read(I2S_PORT, (void *)(audioBuffer + 44 + totalBytesRead), toRead,
+             &bytesRead, portMAX_DELAY);
+    totalBytesRead += bytesRead;
+
+    client.poll(); // ¡ESTO EVITA QUE AZURE CORTE LA CONEXIÓN (Reconectando/Tiempo Excedido)!
+  }
+
+  Serial.printf("Grabación finalizada. Bytes: %d\n", totalBytesRead);
 }
 
 // Estructura para usar PSRAM en ArduinoJson
@@ -199,80 +273,30 @@ struct SpiRamAllocator {
 // Reemplazamos DynamicJsonDocument con uno alojado en PSRAM
 using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;
 
-void playRawAudio(const uint8_t *decodedAudio, size_t outputLength) {
-  if (!decodedAudio || outputLength == 0) return;
-
-  size_t bytesWritten;
-  int16_t *mono_samples = (int16_t *)decodedAudio;
-  size_t num_mono_samples = outputLength / 2;
-  
-  size_t stereo_length = outputLength * 2;
-  int16_t *stereo_samples = (int16_t *)ps_malloc(stereo_length);
-  
-  if (stereo_samples) {
-    for (size_t i = 0; i < num_mono_samples; i++) {
-      stereo_samples[i * 2] = mono_samples[i];     // L
-      stereo_samples[i * 2 + 1] = mono_samples[i]; // R
-    }
-    
-    size_t chunk_size = 4096;
-    for (size_t i = 0; i < stereo_length; i += chunk_size) {
-      size_t to_write = (stereo_length - i > chunk_size) ? chunk_size : (stereo_length - i);
-      i2s_write(I2S_PORT, ((uint8_t*)stereo_samples) + i, to_write, &bytesWritten, portMAX_DELAY);
-    }
-    
-    free(stereo_samples);
-  } else {
-    Serial.println("Error: Sin memoria para buffer Stereo.");
-  }
-}
-
-bool messageReceived = false;
-String lastPayload = "";
-
-void onMessageCallback(WebsocketsMessage message) {
-  if (message.isText()) {
-    String data = message.data();
-    // Ignorar el mensaje de bienvenida del servidor para no desincronizar
-    if (data.indexOf("YOLTIC") != -1 && data.indexOf("Listo") != -1) {
-        return;
-    }
-    lastPayload = data;
-    messageReceived = true;
-  } else if (message.isBinary()) {
-    Serial.println("Audio binario recibido!");
-    showOLED("Hablando...");
-    playRawAudio((const uint8_t *)message.c_str(), message.length());
-    showOLED("ESCUCHANDO"); // Restaurar pantalla
-  }
-}
-
 void processTranslation() {
-  if (!client.available()) {
-    showOLED("Reconectando");
-    client.connect(websockets_server, websockets_port, "/");
-  }
+  showOLED("Enviando...");
+  Serial.println("Enviando audio PCM por HTTP POST...");
 
-  showOLED("TRADUCIENDO");
-  Serial.println("Enviando audio PCM crudo por WebSocket...");
-
-  client.sendBinary((const char *)(audioBuffer + 44), AUDIO_BUFFER_SIZE);
-
-  showOLED("Procesando");
-
-  unsigned long startWait = millis();
-  messageReceived = false;
-  lastPayload = "";
-
-  while (!messageReceived && millis() - startWait < 25000) {
-    client.poll();
-    delay(10);
-  }
-
-  if (messageReceived) {
-    SpiRamJsonDocument doc(4096); // Ya no necesitamos 1MB, solo 4KB
-    DeserializationError err = deserializeJson(doc, lastPayload);
-
+  HTTPClient http;
+  String postUrl = "https://yoltic-inference-ai-gre0cqg8cvcye9en.westeurope-01.azurewebsites.net/api/translate";
+  
+  http.begin(postUrl);
+  http.addHeader("Content-Type", "application/octet-stream");
+  http.setTimeout(35000); // 35 segundos para darle tiempo a Azure, Whisper y Claude
+  
+  // Enviar el audio directamente (HTTPClient se encarga de manejar el tamaño de 320KB internamente)
+  int httpResponseCode = http.POST((uint8_t *)(audioBuffer + 44), AUDIO_BUFFER_SIZE);
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.print("HTTP Code: ");
+    Serial.println(httpResponseCode);
+    Serial.println("Respuesta: " + response);
+    
+    // Parsear la traduccion
+    SpiRamJsonDocument doc(4096);
+    DeserializationError err = deserializeJson(doc, response);
+    
     if (!err) {
       const char *translation = doc["translation"];
       if (translation && strlen(translation) > 0) {
@@ -281,21 +305,68 @@ void processTranslation() {
         showOLED("Trad. Vacia");
       }
       
-      // Esperamos 5 segundos extra para recibir el audio binario
-      unsigned long waitAudio = millis();
-      while(millis() - waitAudio < 5000) {
-          client.poll();
-          delay(10);
+      // Descargar y reproducir el audio TTS
+      const char *audioUrl = doc["audio_url"];
+      if (audioUrl && strlen(audioUrl) > 0) {
+        Serial.printf("Descargando audio de: %s\n", audioUrl);
+        HTTPClient httpAudio;
+        httpAudio.begin(audioUrl);
+        int httpCode = httpAudio.GET();
+        if (httpCode == HTTP_CODE_OK) {
+          int len = httpAudio.getSize();
+          if (len <= 0) {
+            // Si el servidor no envía Content-Length, asignamos 128KB de buffer
+            len = 128 * 1024;
+          }
+          unsigned char *decodedAudio = (unsigned char *)ps_malloc(len);
+          if (decodedAudio) {
+            WiFiClient *stream = httpAudio.getStreamPtr();
+            int bytesRead = 0;
+            long startTime = millis();
+            while (httpAudio.connected() && bytesRead < len && (millis() - startTime < 5000)) {
+              int avail = stream->available();
+              if (avail > 0) {
+                int toRead = min(avail, (int)(len - bytesRead));
+                int r = stream->read(decodedAudio + bytesRead, toRead);
+                if (r > 0) {
+                  bytesRead += r;
+                }
+              } else {
+                delay(10);
+              }
+            }
+            if (bytesRead > 0) {
+              Serial.printf("Audio descargado exitosamente: %d bytes. Reproduciendo...\n", bytesRead);
+              showOLED("Hablando...");
+              playRawAudio(decodedAudio, bytesRead);
+              // Restaurar visualización de la traducción después del habla
+              showOLED(translation ? String(translation) : "Listo");
+            } else {
+              Serial.println("Error: 0 bytes leídos del audio.");
+            }
+            free(decodedAudio);
+          } else {
+            Serial.println("Error: Sin memoria en PSRAM para descargar audio.");
+          }
+        } else {
+          Serial.printf("Error al descargar audio TTS: %d\n", httpCode);
+        }
+        httpAudio.end();
       }
       
+      delay(5000); // Mostrar la traducción en pantalla durante 5 segundos
     } else {
       showOLED("Error JSON");
-      delay(4000);
+      delay(3000);
     }
   } else {
-    showOLED("Tiempo\nExcedido");
-    delay(2000);
+    Serial.print("Error HTTP POST: ");
+    Serial.println(httpResponseCode);
+    showOLED("Error de\nConexion");
+    delay(3000);
   }
+  
+  http.end();
 }
 
 void loop() {

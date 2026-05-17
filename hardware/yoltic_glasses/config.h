@@ -12,9 +12,16 @@
 // Wi-Fi Configuration
 // ══════════════════════════════════════════════════════════════
 
-#define WIFI_SSID          "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD      "YOUR_WIFI_PASSWORD"
+#define WIFI_SSID          "1Loba1"
+#define WIFI_PASSWORD      "Loba1998l"
 #define WIFI_TIMEOUT_MS    15000
+
+// ══════════════════════════════════════════════════════════════
+// WebSockets Server
+// ══════════════════════════════════════════════════════════════
+
+#define WEBSOCKETS_SERVER  "10.203.153.123"
+#define WEBSOCKETS_PORT    8080
 
 // ══════════════════════════════════════════════════════════════
 // Firebase Realtime Database

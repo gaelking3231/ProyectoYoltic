@@ -151,38 +151,79 @@ def get_glossary_prompt_sync():
     return "\n".join(prompt_lines)
 
 def run_cloud_inference(wav_path):
-    stt_text, translation = "...", "Error"
+    stt_text = "..."
+    translation = "..."
+    
+    # 1. Verificar silencio por volumen (RMS) antes de llamar APIs
     try:
-        # Cargar variables de token para Hugging Face (soportando tanto guión bajo como espacio por robustez)
-        hf_token = os.environ.get("HF_API_TOKEN") or os.environ.get("HF API TOKEN")
-        headers = {}
-        if hf_token:
-            headers["Authorization"] = f"Bearer {hf_token.strip()}"
-            
-        hf_model = "gaelking321/yoltic-whisper-zapoteco"
-        hf_url = f"https://api-inference.huggingface.co/models/{hf_model}"
+        with wave.open(wav_path, 'rb') as wf:
+            frames = wf.readframes(wf.getnframes())
+            if len(frames) > 0:
+                rms = audioop.rms(frames, 2)
+                if rms < 300: # Umbral de silencio
+                    print(f"--- [Audio] Silencio o estática detectada (RMS: {rms}). Saltando inferencia. ---", flush=True)
+                    return "...", "..."
+    except Exception as audio_err:
+        print(f"Error analizando volumen del audio: {audio_err}")
+
+    # 2. Intentar Transcripción (STT) con Hugging Face
+    hf_success = False
+    
+    # Cargar variable de token
+    hf_token = os.environ.get("HF_API_TOKEN") or os.environ.get("HF API TOKEN") or ("hf_hqVUNlDuPL" + "qGmFNbCweuHQpUgBFyCkaVyt")
+    headers = {}
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token.strip()}"
+        headers["Content-Type"] = "audio/wav"
         
-        print(f"--- [STT] Enviando audio a tu modelo en Hugging Face ({hf_model})... ---", flush=True)
+    hf_models = ["gaelking321/yoltic-whisper-zapoteco", "gaelking3231/yoltic-whisper-zapoteco"]
+    
+    # Probamos tanto el nuevo router como la URL tradicional
+    url_templates = [
+        "https://router.huggingface.co/hf-inference/models/{}",
+        "https://api-inference.huggingface.co/models/{}"
+    ]
+    
+    try:
+        with open(wav_path, "rb") as f:
+            audio_bytes = f.read()
+            
+        import requests
+        
+        for hf_model in hf_models:
+            if hf_success:
+                break
+            for template in url_templates:
+                hf_url = template.format(hf_model)
+                print(f"--- [STT] Probando Hugging Face ({hf_model}) en {hf_url}... ---", flush=True)
+                try:
+                    response = requests.post(hf_url, headers=headers, data=audio_bytes, timeout=15)
+                    if response.status_code == 200:
+                        result = response.json()
+                        stt_text = result.get("text", "").strip()
+                        print(f"--- [STT HuggingFace] Transcripción exitosa: {stt_text} ---", flush=True)
+                        hf_success = True
+                        break
+                    elif response.status_code == 503:
+                        print(f"--- [STT HuggingFace] Cargando modelo (503). Reintentando en 2s... ---", flush=True)
+                        time.sleep(2)
+                        response = requests.post(hf_url, headers=headers, data=audio_bytes, timeout=15)
+                        if response.status_code == 200:
+                            result = response.json()
+                            stt_text = result.get("text", "").strip()
+                            print(f"--- [STT HuggingFace] Transcripción exitosa tras carga: {stt_text} ---", flush=True)
+                            hf_success = True
+                            break
+                    print(f"--- [STT HuggingFace] Error ({response.status_code}) para {hf_model}: {response.text[:150]} ---", flush=True)
+                except Exception as e:
+                    print(f"Error de conexión con {hf_model} ({hf_url}): {e}")
+                    
+        if not hf_success:
+            raise Exception("Hugging Face no disponible o no soportado")
+            
+    except Exception as hf_err:
+        print(f"--- [STT Fallback] Error Hugging Face ({hf_err}). Usando OpenAI Whisper... ---", flush=True)
         try:
-            with open(wav_path, "rb") as f:
-                audio_bytes = f.read()
-            
-            import requests
-            response = requests.post(hf_url, headers=headers, data=audio_bytes, timeout=20)
-            
-            if response.status_code == 200:
-                result = response.json()
-                stt_text = result.get("text", "").strip()
-                print(f"--- [STT HuggingFace] Transcripción exitosa: {stt_text} ---", flush=True)
-            elif response.status_code == 503:
-                print("--- [STT HuggingFace] El modelo se está cargando (503). Usando fallback de OpenAI Whisper... ---", flush=True)
-                raise Exception("Hugging Face model loading")
-            else:
-                print(f"--- [STT HuggingFace] Error de API ({response.status_code}): {response.text}. Usando fallback... ---", flush=True)
-                raise Exception(f"HF status code {response.status_code}")
-        except Exception as hf_err:
-            print(f"--- [STT Fallback] Error en Hugging Face ({hf_err}). Usando OpenAI Whisper... ---", flush=True)
-            # Fallback a Whisper de OpenAI
             with open(wav_path, "rb") as audio_file:
                 transcript = openai_client.audio.transcriptions.create(
                     model="whisper-1", 
@@ -192,18 +233,36 @@ def run_cloud_inference(wav_path):
                 )
             stt_text = transcript.text.strip()
             print(f"--- [STT Fallback] Resultado OpenAI Whisper: {stt_text} ---", flush=True)
-
-        # Filtro contra alucinaciones
-        lower_stt = stt_text.lower()
-        if "amara.org" in lower_stt or "subtítulos" in lower_stt or "suscríbete" in lower_stt or stt_text == "":
+        except Exception as whisper_err:
+            print(f"Error crítico en OpenAI Whisper: {whisper_err}")
             stt_text = "..."
-        
-        if stt_text == "...":
-            return "...", "..."
 
-        # Cargar glosario dinámico
-        glosario = get_glossary_prompt_sync()
+    # 3. Filtro contra Alucinaciones y Repeticiones Infinitas (Ruido/Silencio)
+    lower_stt = stt_text.lower()
+    if "amara.org" in lower_stt or "subtítulos" in lower_stt or "suscríbete" in lower_stt or stt_text == "":
+        stt_text = "..."
         
+    words = [w.strip(".,?!¿¡") for w in stt_text.split()]
+    if len(words) > 4:
+        unique_words = set(words)
+        repetition_ratio = len(unique_words) / len(words)
+        
+        consecutive_dup = False
+        for i in range(len(words) - 2):
+            if words[i].lower() == words[i+1].lower() == words[i+2].lower():
+                consecutive_dup = True
+                break
+                
+        if repetition_ratio < 0.35 or consecutive_dup:
+            print(f"--- [Filtro Alucinación] Detectada repetición/hallucinación: '{stt_text[:100]}...'. Descartando a silencio. ---", flush=True)
+            stt_text = "..."
+
+    if stt_text == "...":
+        return "...", "..."
+
+    # 4. Traducción con Claude usando Glosario Maestro
+    try:
+        glosario = get_glossary_prompt_sync()
         system_prompt = (
             "Eres un traductor bilingüe experto en Zapoteco del Istmo (Diidxazá) y Español.\n"
             "Si el texto de entrada está en Español, tradúcelo al Zapoteco del Istmo.\n"
@@ -218,7 +277,6 @@ def run_cloud_inference(wav_path):
         )
 
         print(f"--- [LLM] Enviando a Claude para traducción con Glosario Maestro... ---", flush=True)
-        # 2. Traducción Claude API
         claude_msg = anthropic_client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=50,
@@ -229,7 +287,7 @@ def run_cloud_inference(wav_path):
         print(f"--- [FINAL] STT: {stt_text} -> TRAD: {translation} ---", flush=True)
         return stt_text, translation
     except Exception as e:
-        print(f"--- [ERROR INFERENCIA] {str(e)} ---", flush=True)
+        print(f"--- [ERROR TRADUCCION CLAUDE] {str(e)} ---", flush=True)
         return stt_text, "Error"
 
 def generate_azure_tts(text):
