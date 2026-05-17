@@ -133,7 +133,7 @@ def run_cloud_inference(wav_path):
         print(f"--- [LLM] Enviando a Claude para traducción... ---", flush=True)
         # 2. Traducción Claude API
         claude_msg = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model="claude-sonnet-4-6",
             max_tokens=50,
             system="Eres un traductor bilingüe experto en Zapoteco del Istmo y Español. Si el texto de entrada está en Español, tradúcelo al Zapoteco del Istmo. Si el texto está en Zapoteco, tradúcelo al Español. Devuelve SOLO la traducción directa.",
             messages=[{"role": "user", "content": stt_text}]
