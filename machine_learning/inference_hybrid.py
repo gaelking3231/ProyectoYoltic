@@ -176,6 +176,7 @@ def run_cloud_inference(wav_path):
         headers["Authorization"] = f"Bearer {hf_token.strip()}"
         headers["Content-Type"] = "audio/wav"
         
+    hf_endpoint = os.environ.get("HF_ENDPOINT_URL")
     hf_models = ["gaelking321/yoltic-whisper-zapoteco", "gaelking3231/yoltic-whisper-zapoteco"]
     
     # Probamos tanto el nuevo router como la URL tradicional
@@ -189,6 +190,21 @@ def run_cloud_inference(wav_path):
             audio_bytes = f.read()
             
         import requests
+        
+        # 1. Probar Endpoint Dedicado si está configurado en las variables de entorno
+        if hf_endpoint:
+            print(f"--- [STT] Detectado Endpoint Dedicado de Hugging Face: {hf_endpoint} ---", flush=True)
+            try:
+                response = requests.post(hf_endpoint, headers=headers, data=audio_bytes, timeout=15)
+                if response.status_code == 200:
+                    result = response.json()
+                    stt_text = result.get("text", "").strip()
+                    print(f"--- [STT Dedicated Endpoint] Transcripción exitosa: {stt_text} ---", flush=True)
+                    hf_success = True
+                else:
+                    print(f"--- [STT Dedicated Endpoint] Error ({response.status_code}): {response.text[:100]} ---", flush=True)
+            except Exception as e:
+                print(f"Error de conexión con el Endpoint Dedicado ({hf_endpoint}): {e}", flush=True)
         
         for hf_model in hf_models:
             if hf_success:
