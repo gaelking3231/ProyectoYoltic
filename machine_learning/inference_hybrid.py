@@ -291,22 +291,53 @@ def run_cloud_inference(wav_path):
         return stt_text, "Error"
 
 def generate_azure_tts(text):
-    """Genera audio PCM de alta calidad usando Azure Neural TTS"""
-    if not azure_speech_config:
-        return None
-    
-    # Crear un sintetizador en memoria
-    pull_stream = speechsdk.audio.PullAudioOutputStream()
-    stream_config = speechsdk.audio.AudioOutputConfig(stream=pull_stream)
-    
-    # Configurar formato a 16kHz Mono (Igual que el ESP32)
-    azure_speech_config.set_speech_synthesis_output_format(speechsdk.SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm)
-    
-    synthesizer = speechsdk.SpeechSynthesizer(speech_config=azure_speech_config, audio_config=stream_config)
-    result = synthesizer.speak_text_async(text).get()
-    
-    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-        return result.audio_data
+    """Genera audio PCM de alta calidad usando Azure Neural TTS con fallback a OpenAI TTS"""
+    # Intentar Azure Neural TTS primero
+    if azure_speech_config:
+        try:
+            pull_stream = speechsdk.audio.PullAudioOutputStream()
+            stream_config = speechsdk.audio.AudioOutputConfig(stream=pull_stream)
+            
+            # Configurar formato a 16kHz Mono (Igual que el ESP32)
+            azure_speech_config.set_speech_synthesis_output_format(speechsdk.SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm)
+            
+            synthesizer = speechsdk.SpeechSynthesizer(speech_config=azure_speech_config, audio_config=stream_config)
+            result = synthesizer.speak_text_async(text).get()
+            
+            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+                print("--- [TTS Azure] Sintetizado con éxito ---", flush=True)
+                return result.audio_data
+            else:
+                print(f"--- [TTS Azure] Falló (Reason: {result.reason}). Usando Fallback de OpenAI... ---", flush=True)
+        except Exception as azure_err:
+            print(f"--- [TTS Azure Exception] {azure_err}. Usando Fallback de OpenAI... ---", flush=True)
+    else:
+        print("--- [TTS Azure Config] Azure Speech no configurado. Usando OpenAI TTS... ---", flush=True)
+        
+    # Fallback: OpenAI TTS (con formato pcm raw)
+    if openai_client and openai_key:
+        try:
+            print(f"--- [TTS OpenAI] Sintetizando '{text}'... ---", flush=True)
+            response = openai_client.audio.speech.create(
+                model="tts-1",
+                voice="alloy",
+                input=text,
+                response_format="pcm" # Retorna PCM crudo de 24kHz Mono 16-bit
+            )
+            pcm_data = response.read()
+            
+            # OpenAI pcm por defecto es 24kHz 16-bit Mono. 
+            # Debemos remuestrearlo a 16kHz Mono para que el ESP32 lo reproduzca sin acelerarse
+            try:
+                pcm_16k = audioop.ratecv(pcm_data, 2, 1, 24000, 16000, None)[0]
+                print(f"--- [TTS OpenAI] Éxito: Remuestreado de 24kHz a 16kHz ({len(pcm_16k)} bytes) ---", flush=True)
+                return pcm_16k
+            except Exception as rate_err:
+                print(f"Error remuestreando PCM de OpenAI: {rate_err}")
+                return pcm_data # Fallback crudo
+        except Exception as oai_err:
+            print(f"Error crítico en OpenAI TTS: {oai_err}")
+            
     return None
 
 

@@ -314,16 +314,17 @@ void processTranslation() {
         int httpCode = httpAudio.GET();
         if (httpCode == HTTP_CODE_OK) {
           int len = httpAudio.getSize();
+          Serial.printf("Content-Length anunciado por servidor: %d bytes\n", len);
           if (len <= 0) {
-            // Si el servidor no envía Content-Length, asignamos 128KB de buffer
-            len = 128 * 1024;
+            // Si el servidor no envía Content-Length, asignamos 192KB por seguridad
+            len = 192 * 1024;
           }
           unsigned char *decodedAudio = (unsigned char *)ps_malloc(len);
           if (decodedAudio) {
             WiFiClient *stream = httpAudio.getStreamPtr();
             int bytesRead = 0;
             long startTime = millis();
-            while (httpAudio.connected() && bytesRead < len && (millis() - startTime < 5000)) {
+            while (bytesRead < len && (millis() - startTime < 6000)) {
               int avail = stream->available();
               if (avail > 0) {
                 int toRead = min(avail, (int)(len - bytesRead));
@@ -332,11 +333,14 @@ void processTranslation() {
                   bytesRead += r;
                 }
               } else {
-                delay(10);
+                if (!httpAudio.connected() && stream->available() == 0) {
+                  break; // Conexión cerrada y buffer drenado
+                }
+                delay(5);
               }
             }
             if (bytesRead > 0) {
-              Serial.printf("Audio descargado exitosamente: %d bytes. Reproduciendo...\n", bytesRead);
+              Serial.printf("Audio descargado exitosamente: %d bytes. Reproduciendo en I2S...\n", bytesRead);
               showOLED("Hablando...");
               playRawAudio(decodedAudio, bytesRead);
               // Restaurar visualización de la traducción después del habla
@@ -349,7 +353,7 @@ void processTranslation() {
             Serial.println("Error: Sin memoria en PSRAM para descargar audio.");
           }
         } else {
-          Serial.printf("Error al descargar audio TTS: %d\n", httpCode);
+          Serial.printf("Error al descargar audio TTS (HTTP Code): %d\n", httpCode);
         }
         httpAudio.end();
       }
