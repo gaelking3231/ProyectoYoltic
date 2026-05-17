@@ -269,6 +269,18 @@ async def handle_translate(request):
         except Exception as e:
             print(f"Error inferencia: {e}")
             
+        # TTS con Azure Neural TTS
+        audio_16k = None
+        if translation and translation not in ["Error", "...", "Silencio..."]:
+            try:
+                audio_16k = await asyncio.to_thread(generate_azure_tts, translation)
+            except Exception as e:
+                print(f"Error generando TTS: {e}")
+                
+        audio_base64 = ""
+        if audio_16k:
+            audio_base64 = base64.b64encode(audio_16k).decode('utf-8')
+            
         latency_ms = int((time.time() - start_time) * 1000)
         
         # Sincronizar Firestore
@@ -290,7 +302,8 @@ async def handle_translate(request):
             
         return web.json_response({
             "translation": translation,
-            "latency_ms": latency_ms
+            "latency_ms": latency_ms,
+            "audio": audio_base64
         })
     except Exception as e:
         print(f"Error HTTP Translate: {e}")
