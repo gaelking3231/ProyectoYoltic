@@ -214,9 +214,12 @@ def run_cloud_inference(wav_path):
                             print(f"--- [STT HuggingFace] Transcripción exitosa tras carga: {stt_text} ---", flush=True)
                             hf_success = True
                             break
-                    print(f"--- [STT HuggingFace] Error ({response.status_code}) para {hf_model}: {response.text[:150]} ---", flush=True)
+                    if response.status_code in [400, 404]:
+                        print(f"--- [STT HuggingFace] El modelo '{hf_model}' no está activo o no es soportado por el API Serverless gratuito de Hugging Face. Activando fallback a OpenAI Whisper... ---", flush=True)
+                    else:
+                        print(f"--- [STT HuggingFace] Error ({response.status_code}) para {hf_model}: {response.text[:100]} ---", flush=True)
                 except Exception as e:
-                    print(f"Error de conexión con {hf_model} ({hf_url}): {e}")
+                    print(f"Error de conexión con {hf_model} ({hf_url}): {e}", flush=True)
                     
         if not hf_success:
             raise Exception("Hugging Face no disponible o no soportado")
