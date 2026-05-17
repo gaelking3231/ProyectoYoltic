@@ -295,7 +295,7 @@ void processTranslation() {
     Serial.println("Respuesta: " + response);
     
     // Parsear la traduccion
-    SpiRamJsonDocument doc(262144);
+    SpiRamJsonDocument doc(1024);
     DeserializationError err = deserializeJson(doc, response);
     
     if (!err) {
@@ -306,27 +306,33 @@ void processTranslation() {
         showOLED("Trad. Vacia");
       }
 
-      // Extraer y reproducir audio base64 si existe
-      const char *audioBase64 = doc["audio"];
-      if (audioBase64 && strlen(audioBase64) > 0) {
-        size_t slen = strlen(audioBase64);
-        size_t dlen = (slen * 3) / 4 + 1;
-        unsigned char *decodedAudio = (unsigned char *)ps_malloc(dlen);
-        if (decodedAudio) {
-          size_t olen = 0;
-          int ret = mbedtls_base64_decode(decodedAudio, dlen, &olen, (const unsigned char *)audioBase64, slen);
-          if (ret == 0) {
-            Serial.printf("Audio decodificado exitosamente: %d bytes. Reproduciendo...\n", olen);
-            showOLED("Hablando...");
-            playRawAudio(decodedAudio, olen);
-            showOLED(translation ? String(translation) : "Listo");
-          } else {
-            Serial.printf("Error al decodificar Base64: %d\n", ret);
+      // Descargar y reproducir el audio TTS
+      const char *audioUrl = doc["audio_url"];
+      if (audioUrl && strlen(audioUrl) > 0) {
+        Serial.printf("Descargando audio de: %s\n", audioUrl);
+        HTTPClient httpAudio;
+        httpAudio.begin(audioUrl);
+        int httpCode = httpAudio.GET();
+        if (httpCode == HTTP_CODE_OK) {
+          int len = httpAudio.getSize();
+          if (len > 0) {
+            unsigned char *decodedAudio = (unsigned char *)ps_malloc(len);
+            if (decodedAudio) {
+              WiFiClient *stream = httpAudio.getStreamPtr();
+              int bytesRead = stream->readBytes(decodedAudio, len);
+              Serial.printf("Audio descargado de URL: %d bytes. Reproduciendo...\n", bytesRead);
+              showOLED("Hablando...");
+              playRawAudio(decodedAudio, bytesRead);
+              showOLED(translation ? String(translation) : "Listo");
+              free(decodedAudio);
+            } else {
+              Serial.println("Error: Sin memoria en PSRAM para descargar audio.");
+            }
           }
-          free(decodedAudio);
         } else {
-          Serial.println("Error: Sin memoria en PSRAM para decodificar audio.");
+          Serial.printf("Error al descargar audio TTS: %d\n", httpCode);
         }
+        httpAudio.end();
       }
       
       delay(5000); // Mostrar 5 segundos

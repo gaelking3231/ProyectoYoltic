@@ -107,6 +107,49 @@ def run_local_inference(audio_np):
     translation = nllb_tokenizer.decode(results_nllb[0].hypotheses[0], skip_special_tokens=True, clean_up_tokenization_spaces=False).strip()
     return stt_text, translation
 
+def get_glossary_prompt_sync():
+    prompt_lines = []
+    try:
+        if db:
+            docs = db.collection("glosario_maestro").stream()
+            for doc in docs:
+                data = doc.to_dict()
+                es = data.get("es", "")
+                zap = data.get("zap", "")
+                if es and zap:
+                    prompt_lines.append(f'• "{es}" <-> "{zap}"')
+    except Exception as e:
+        print(f"Error cargando glosario de Firestore: {e}")
+        
+    if not prompt_lines:
+        # Fallback local
+        fallback = [
+            ("Hola", "Padiuxi"),
+            ("¿Cómo estás?", "¿Xha xhie lii?"),
+            ("¿Cómo te llamas?", "¿Xha lá lii?"),
+            ("Mi nombre es Levi", "Naa lá Levi"),
+            ("Mucho gusto", "Riuu' dxi'che lii"),
+            ("¿A dónde vas?", "¿Raú ué?"),
+            ("¿Dónde está el baño?", "¿Paraa nuu guído'?"),
+            ("Tengo hambre", "Gaxha naa"),
+            ("Quiero agua", "Racala'dxe nisa"),
+            ("¿Cuánto cuesta esto?", "¿Panda quí'ni' ndi'?"),
+            ("Me gustas mucho", "Nadxií lii"),
+            ("Estás muy bonita", "Sicarúpe' lii"),
+            ("Te quiero", "Nadxiiee lii"),
+            ("Muchas gracias", "Xquixepe' lii"),
+            ("De nada", "Cadi guní' lii"),
+            ("Yo hablo zapoteco", "Naa riní' diidxazá"),
+            ("Bienvenido a Yoltic", "Biutixe lade Yoltic"),
+            ("Soy ingeniero", "Ingeniero naa"),
+            ("Estudio en el TESE", "Escuela TESE nuu naa"),
+            ("Adiós", "Ziuulá'"),
+        ]
+        for es, zap in fallback:
+            prompt_lines.append(f'• "{es}" <-> "{zap}"')
+            
+    return "\n".join(prompt_lines)
+
 def run_cloud_inference(wav_path):
     stt_text, translation = "...", "Error"
     try:
@@ -130,12 +173,28 @@ def run_cloud_inference(wav_path):
         if stt_text == "...":
             return "...", "..."
 
-        print(f"--- [LLM] Enviando a Claude para traducción... ---", flush=True)
+        # Cargar glosario dinámico
+        glosario = get_glossary_prompt_sync()
+        
+        system_prompt = (
+            "Eres un traductor bilingüe experto en Zapoteco del Istmo (Diidxazá) y Español.\n"
+            "Si el texto de entrada está en Español, tradúcelo al Zapoteco del Istmo.\n"
+            "Si el texto de entrada está en Zapoteco, tradúcelo al Español.\n\n"
+            "Usa esta lista de equivalencias (Glosario Maestro) como FUENTE DE VERDAD ABSOLUTA. "
+            "Si el texto coincide de forma exacta o aproximada con alguna de estas frases (incluso con "
+            "pequeñas variaciones de ortografía o acentos como 'Padiuxhi' <-> 'Padiuxi', 'Xquixepe' <-> 'Xquixe pe''), "
+            "debes usar esa traducción correspondiente de inmediato:\n"
+            f"{glosario}\n\n"
+            "Devuelve únicamente el texto traducido de forma directa, sin explicaciones ni rodeos. "
+            "Por ejemplo, si la traducción es 'Hola', tu respuesta completa debe ser únicamente 'Hola'."
+        )
+
+        print(f"--- [LLM] Enviando a Claude para traducción con Glosario Maestro... ---", flush=True)
         # 2. Traducción Claude API
         claude_msg = anthropic_client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=50,
-            system="Eres un traductor bilingüe experto en Zapoteco del Istmo y Español. Si el texto de entrada está en Español, tradúcelo al Zapoteco del Istmo. Si el texto está en Zapoteco, tradúcelo al Español. Devuelve SOLO la traducción directa.",
+            system=system_prompt,
             messages=[{"role": "user", "content": stt_text}]
         )
         translation = claude_msg.content[0].text.strip()
@@ -277,9 +336,18 @@ async def handle_translate(request):
             except Exception as e:
                 print(f"Error generando TTS: {e}")
                 
-        audio_base64 = ""
+        tts_url = ""
         if audio_16k:
-            audio_base64 = base64.b64encode(audio_16k).decode('utf-8')
+            try:
+                tts_filename = f"{doc_id}_tts.pcm"
+                tts_filepath = os.path.join(SAVE_DIR, tts_filename)
+                with open(tts_filepath, 'wb') as f:
+                    f.write(audio_16k)
+                server_url = "https://yoltic-inference-ai-gre0cqg8cvcye9en.westeurope-01.azurewebsites.net"
+                tts_url = f"{server_url}/audio/{tts_filename}"
+                print(f"Audio TTS generado y guardado en {tts_filepath}")
+            except Exception as e:
+                print(f"Error guardando archivo TTS local: {e}")
             
         latency_ms = int((time.time() - start_time) * 1000)
         
@@ -303,7 +371,7 @@ async def handle_translate(request):
         return web.json_response({
             "translation": translation,
             "latency_ms": latency_ms,
-            "audio": audio_base64
+            "audio_url": tts_url
         })
     except Exception as e:
         print(f"Error HTTP Translate: {e}")
