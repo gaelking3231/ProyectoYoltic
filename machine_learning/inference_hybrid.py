@@ -153,8 +153,8 @@ def get_glossary_prompt_sync():
 def run_cloud_inference(wav_path):
     stt_text, translation = "...", "Error"
     try:
-        # Cargar variables de token para Hugging Face
-        hf_token = os.environ.get("HF_API_TOKEN")
+        # Cargar variables de token para Hugging Face (soportando tanto guión bajo como espacio por robustez)
+        hf_token = os.environ.get("HF_API_TOKEN") or os.environ.get("HF API TOKEN")
         headers = {}
         if hf_token:
             headers["Authorization"] = f"Bearer {hf_token.strip()}"
