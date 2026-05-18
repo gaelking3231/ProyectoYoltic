@@ -126,6 +126,8 @@ def get_glossary_prompt_sync():
         # Fallback local
         fallback = [
             ("Hola", "Padiuxi"),
+            ("Hola", "Paad Dios"),
+            ("Hola", "Pa dios"),
             ("¿Cómo estás?", "¿Xha xhie lii?"),
             ("¿Cómo te llamas?", "¿Xha lá lii?"),
             ("Mi nombre es Levi", "Naa lá Levi"),

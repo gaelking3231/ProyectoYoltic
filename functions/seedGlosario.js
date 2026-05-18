@@ -20,6 +20,8 @@ const BASE_URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/dat
 
 const GLOSARIO = [
   { id: "saludo_01", es: "Hola", zap: "Padiuxi", categoria: "saludo" },
+  { id: "saludo_01_var1", es: "Hola", zap: "Paad Dios", categoria: "saludo" },
+  { id: "saludo_01_var2", es: "Hola", zap: "Pa dios", categoria: "saludo" },
   { id: "social_02", es: "¿Cómo estás?", zap: "¿Xha xhie lii?", categoria: "social" },
   { id: "social_03", es: "¿Cómo te llamas?", zap: "¿Xha lá lii?", categoria: "social" },
   { id: "personal_04", es: "Mi nombre es Levi", zap: "Naa lá Levi", categoria: "personal" },
