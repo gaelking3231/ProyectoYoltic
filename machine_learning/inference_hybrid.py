@@ -176,7 +176,7 @@ def run_cloud_inference(wav_path):
         headers["Authorization"] = f"Bearer {hf_token.strip()}"
         headers["Content-Type"] = "audio/wav"
         
-    hf_endpoint = os.environ.get("HF_ENDPOINT_URL")
+    hf_endpoint = os.environ.get("HF_ENDPOINT_URL") or "https://gpo1gu2yekda59jq.us-east-1.aws.endpoints.huggingface.cloud"
     hf_models = ["gaelking321/yoltic-whisper-zapoteco", "gaelking3231/yoltic-whisper-zapoteco"]
     
     # Probamos tanto el nuevo router como la URL tradicional
