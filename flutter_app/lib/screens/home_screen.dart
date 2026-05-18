@@ -99,11 +99,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
-          color: Color(0xFF050505),
-          image: DecorationImage(
-            image: AssetImage('assets/images/bg_glow.png'), // Fallback if image doesn't exist, will just show bg color
-            fit: BoxFit.cover,
-            opacity: 0.1,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF0F172A), // Slate 900
+              Color(0xFF020617), // Slate 950
+              Color(0xFF000000), // Black
+            ],
+            stops: [0.0, 0.5, 1.0],
           ),
         ),
         child: SafeArea(
@@ -694,8 +698,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 extension on double {

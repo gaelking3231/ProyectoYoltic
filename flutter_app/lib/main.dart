@@ -16,20 +16,18 @@ import 'screens/home_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (kIsWeb) {
-    await Firebase.initializeApp(
-      options: const FirebaseOptions(
-        apiKey: "AIzaSyCzphsTRNu3g5U7zUi9tNIR0GC3kzfPtRU",
-        authDomain: "proyectoyoltic.firebaseapp.com",
-        projectId: "proyectoyoltic",
-        storageBucket: "proyectoyoltic.firebasestorage.app",
-        messagingSenderId: "469382649324",
-        appId: "1:469382649324:web:1b3b71a3f89d55936cdcc9",
-      ),
-    );
-  } else {
-    await Firebase.initializeApp();
-  }
+  // Configuración de Firebase unificada (Web/Android/iOS)
+  await Firebase.initializeApp(
+    options: const FirebaseOptions(
+      apiKey: "AIzaSyCzphsTRNu3g5U7zUi9tNIR0GC3kzfPtRU",
+      authDomain: "proyectoyoltic.firebaseapp.com",
+      projectId: "proyectoyoltic",
+      storageBucket: "proyectoyoltic.firebasestorage.app",
+      messagingSenderId: "469382649324",
+      appId: "1:469382649324:web:1b3b71a3f89d55936cdcc9",
+      databaseURL: "https://proyectoyoltic-default-rtdb.firebaseio.com",
+    ),
+  );
 
   // Set status bar style
   SystemChrome.setSystemUIOverlayStyle(

@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 /// BLE Service UUIDs (must match ESP32-S3 firmware)
 class BleUuids {
@@ -71,6 +72,32 @@ class BleService extends ChangeNotifier {
       if (await FlutterBluePlus.isSupported == false) {
         _onError('Bluetooth is not supported on this device');
         return;
+      }
+
+      // ─── Permission Check ──────────────────────────────
+      // On Android, Location services and BT permissions are required
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        // Request Bluetooth permissions for Android 12+
+        // and Location for all Android versions (required for scanning)
+        Map<Permission, PermissionStatus> statuses = await [
+          Permission.bluetoothScan,
+          Permission.bluetoothConnect,
+          Permission.location,
+        ].request();
+
+        if (statuses[Permission.location]!.isDenied || 
+            statuses[Permission.bluetoothScan]!.isDenied) {
+          _onError('Permissions (Location/Bluetooth) were denied. Please enable them in settings.');
+          _setState(BleConnectionState.disconnected);
+          return;
+        }
+
+        // Check if Location Services are actually ON
+        if (!await Permission.location.serviceStatus.isEnabled) {
+           _onError('Location Services are OFF. Please turn them ON to scan for glasses.');
+           _setState(BleConnectionState.disconnected);
+           return;
+        }
       }
 
       // Start scanning with service UUID filter

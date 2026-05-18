@@ -83,11 +83,6 @@ class TranslationScreen extends StatelessWidget {
       width: double.infinity,
       decoration: const BoxDecoration(
         color: Color(0xFF050505),
-        image: DecorationImage(
-          image: AssetImage('assets/images/bg_glow.png'),
-          fit: BoxFit.cover,
-          opacity: 0.05,
-        ),
       ),
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 110, 20, 20),

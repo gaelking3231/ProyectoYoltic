@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 # Carpeta para guardar audios de entrenamiento
 SAVE_DIR = "/home/site/wwwroot/training_data" if os.environ.get("PORT") else "training_data"
 os.makedirs(SAVE_DIR, exist_ok=True)
+SERVER_URL = "https://yoltic-inference-ai-gre0cqg8cvcye9en.westeurope-01.azurewebsites.net"
 
 # Cargar variables de entorno (OpenAI API, Anthropic API) desde dashboard/.env.local
 env_path = os.path.join(os.path.dirname(__file__), "..", "dashboard", ".env.local")
@@ -447,20 +448,27 @@ async def handle_translate(request):
         pcm_boosted = audioop.mul(pcm_original, 2, 5.0) 
         audio_np = np.frombuffer(pcm_original, dtype=np.int16).astype(np.float32) / 32768.0
         
-        # Usar /tmp para archivos temporales en Azure Linux
+        # Usar /tmp para archivos temporales (Boosted Whisper)
         doc_id = str(uuid.uuid4())
         temp_dir = "/tmp/yoltic_audio"
         os.makedirs(temp_dir, exist_ok=True)
-        wav_path = f"{temp_dir}/{doc_id}.wav"
+        boosted_wav_path = f"{temp_dir}/{doc_id}_boosted.wav"
         
-        with wave.open(wav_path, 'wb') as wf:
+        with wave.open(boosted_wav_path, 'wb') as wf:
             wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
             wf.writeframes(pcm_boosted)
+            
+        # Clean WAV para el Dashboard
+        clean_filename = f"{doc_id}.wav"
+        clean_wav_path = os.path.join(SAVE_DIR, clean_filename)
+        with wave.open(clean_wav_path, 'wb') as wf:
+            wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
+            wf.writeframes(pcm_original)
             
         # Inferencia
         stt_text, translation = "...", "Error"
         try:
-            stt_text, translation = await asyncio.to_thread(run_cloud_inference, wav_path)
+            stt_text, translation = await asyncio.to_thread(run_cloud_inference, boosted_wav_path)
         except Exception as e:
             print(f"Error inferencia: {e}")
             
@@ -479,8 +487,7 @@ async def handle_translate(request):
                 tts_filepath = os.path.join(SAVE_DIR, tts_filename)
                 with open(tts_filepath, 'wb') as f:
                     f.write(audio_16k)
-                server_url = "https://yoltic-inference-ai-gre0cqg8cvcye9en.westeurope-01.azurewebsites.net"
-                tts_url = f"{server_url}/audio/{tts_filename}"
+                tts_url = f"{SERVER_URL}/audio/{tts_filename}"
                 print(f"Audio TTS generado y guardado en {tts_filepath}")
             except Exception as e:
                 print(f"Error guardando archivo TTS local: {e}")
@@ -495,7 +502,8 @@ async def handle_translate(request):
                 "latency_ms": latency_ms,
                 "source": "glasses_http",
                 "confidence": 0.85,
-                "timestamp": firestore.SERVER_TIMESTAMP
+                "timestamp": firestore.SERVER_TIMESTAMP,
+                "audioUrl": f"{SERVER_URL}/audio/{clean_filename}"
             })
             db.collection("logs").add({
                 "time": "NOW",
@@ -550,20 +558,29 @@ async def websocket_handler(request):
                     pcm_boosted = audioop.mul(pcm_original, 2, 5.0) 
                     audio_np = np.frombuffer(pcm_original, dtype=np.int16).astype(np.float32) / 32768.0
                     
-                    # Usar /tmp para archivos temporales en Azure Linux
+                    doc_id = str(uuid.uuid4())
+                    
+                    # Usar /tmp para archivos temporales (Boosted Whisper)
                     temp_dir = "/tmp/yoltic_audio"
                     os.makedirs(temp_dir, exist_ok=True)
-                    wav_path = f"{temp_dir}/{doc_id}.wav"
+                    boosted_wav_path = f"{temp_dir}/{doc_id}_boosted.wav"
                     
-                    with wave.open(wav_path, 'wb') as wf:
+                    with wave.open(boosted_wav_path, 'wb') as wf:
                         wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
                         wf.writeframes(pcm_boosted)
+                        
+                    # Clean WAV para el Dashboard
+                    clean_filename = f"{doc_id}.wav"
+                    clean_wav_path = os.path.join(SAVE_DIR, clean_filename)
+                    with wave.open(clean_wav_path, 'wb') as wf:
+                        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
+                        wf.writeframes(pcm_original)
                     
                     # Inferencia
                     stt_text, translation = "...", "Error"
                     source = "cloud"
                     try:
-                        stt_text, translation = await asyncio.to_thread(run_cloud_inference, wav_path)
+                        stt_text, translation = await asyncio.to_thread(run_cloud_inference, boosted_wav_path)
                     except Exception as e:
                         print(f"Error inferencia: {e}")
                     
@@ -580,7 +597,8 @@ async def websocket_handler(request):
                             "latency_ms": latency_ms,
                             "source": "glasses",
                             "confidence": 0.85, # Confianza estimada del modelo base
-                            "timestamp": firestore.SERVER_TIMESTAMP
+                            "timestamp": firestore.SERVER_TIMESTAMP,
+                            "audioUrl": f"{SERVER_URL}/audio/{clean_filename}"
                         })
                         
                         # 📝 ESCRIBIR UN LOG REAL DE CONEXIÓN AR

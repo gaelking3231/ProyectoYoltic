@@ -15,6 +15,14 @@ export default function WaveformPlayer({ audioUrl }: WaveformPlayerProps) {
   const [isReady, setIsReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  if (!audioUrl || audioUrl.startsWith("undefined") || audioUrl.includes("undefined")) {
+    return (
+      <div style={{ color: "var(--color-text-tertiary)", fontSize: "11px", padding: "8px", textAlign: "center" }}>
+        Audio no disponible
+      </div>
+    );
+  }
+
   // Quitamos los logs de audioUrl porque son cadenas gigantes que pueden trabar tu terminal
   const isBase64 = audioUrl && (audioUrl.startsWith("data:") || audioUrl.length > 1000);
 

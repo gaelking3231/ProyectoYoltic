@@ -237,7 +237,7 @@ export default function ArchiveView() {
         </div>
       </div>
 
-      <div className="glass-card flex-1 overflow-hidden flex flex-col">
+      <div className="glass-card flex-1 overflow-y-auto flex flex-col">
 
         {loading ? (
           <div style={{ padding: "40px", textAlign: "center", color: "var(--color-text-secondary)", fontSize: "14px" }}>
@@ -266,8 +266,12 @@ export default function ArchiveView() {
                   </span>
                 </div>
                 
-                <div className="bg-slate-900/40 rounded-xl overflow-hidden border border-white/5 shadow-inner">
-                  <WaveformPlayer audioUrl={item.audioUrl?.startsWith("data:") ? item.audioUrl : `${item.audioUrl}?t=${item.id}`} />
+                <div className="bg-slate-900/40 rounded-xl overflow-hidden border border-white/5 shadow-inner flex items-center justify-center p-2 min-h-[50px]">
+                  {item.audioUrl ? (
+                    <WaveformPlayer audioUrl={item.audioUrl.startsWith("data:") ? item.audioUrl : `${item.audioUrl}?t=${item.id}`} />
+                  ) : (
+                    <span className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-tighter opacity-60 py-2">Audio no disponible</span>
+                  )}
                 </div>
                 
                 <div className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-tighter opacity-60">
